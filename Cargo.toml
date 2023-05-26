@@ -9,3 +9,6 @@ edition = "2021"
 arrayvec = "0.7.2"
 cozy-chess = { version = "0.3.2", features = ["std"] }
 cozy-uci = { git = "https://github.com/analog-hors/cozy-uci", version = "0.1.0" }
+
+[profile.release]
+lto = true

@@ -21,15 +21,15 @@ impl MoveOrderer for MVVLVA {
 
 #[derive(Debug)]
 pub struct ChecksHistoryKillers {
-    pub history: [usize; 64 * 12],
-    pub killers: [Move; 50],
+    pub history: Vec<usize>,
+    pub killers: Vec<Move>,
 }
 
 impl ChecksHistoryKillers {
     pub fn new() -> Self {
         Self {
-            history: [0; 64 * 12],
-            killers: [NULL_MOVE; 50],
+            history: vec![0; 64 * 12],
+            killers: vec![NULL_MOVE; 50],
         }
     }
 

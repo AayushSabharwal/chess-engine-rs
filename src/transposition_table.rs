@@ -11,6 +11,7 @@ pub enum TTNodeType {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TTEntry {
+    pub hash: u64,
     pub best_move: Move,
     pub best_value: i32,
     pub depth: usize,
@@ -18,6 +19,7 @@ pub struct TTEntry {
 }
 
 const NULL_TTE: TTEntry = TTEntry {
+    hash: 0,
     best_move: NULL_MOVE,
     best_value: -640000,
     depth: 0,
@@ -25,21 +27,23 @@ const NULL_TTE: TTEntry = TTEntry {
 };
 
 #[derive(Debug)]
-pub struct TranspositionTable<const N: usize> {
-    table: [TTEntry; N],
+pub struct TranspositionTable {
+    table: Vec<TTEntry>,
+    size: usize
 }
 
-impl<const N: usize> TranspositionTable<N> {
-    pub fn new() -> Self {
+impl TranspositionTable {
+    pub fn new(size: usize) -> Self {
         Self {
-            table: [NULL_TTE; N],
+            table: vec![NULL_TTE; size],
+            size,
         }
     }
 
     pub fn get_entry(&self, h: u64) -> Option<TTEntry> {
-        let val = self.table[h as usize % N];
+        let val = self.table[h as usize % self.size];
 
-        if val == NULL_TTE {
+        if val != NULL_TTE && val.hash != h {
             None
         } else {
             Some(val)
@@ -47,6 +51,6 @@ impl<const N: usize> TranspositionTable<N> {
     }
 
     pub fn set_entry(&mut self, h: u64, e: TTEntry) {
-        self.table[h as usize % N] = e;
+        self.table[h as usize % self.size] = e;
     }
 }

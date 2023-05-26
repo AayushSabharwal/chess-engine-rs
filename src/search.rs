@@ -1,3 +1,5 @@
+use std::time::{self, Instant};
+
 use arrayvec::ArrayVec;
 use cozy_chess::{Board, GameStatus, Move, Piece};
 
@@ -10,10 +12,10 @@ use crate::{
 const PIECE_VALUE_INF: i32 = 900 * 64;
 
 #[derive(Debug)]
-pub struct Searcher<const N: usize> {
+pub struct Searcher {
     max_depth: usize,
     chk_orderer: ChecksHistoryKillers,
-    pub tt: TranspositionTable<N>,
+    tt: TranspositionTable,
 }
 
 #[derive(Debug)]
@@ -27,12 +29,12 @@ impl SearchStats {
     }
 }
 
-impl<const N: usize> Searcher<N> {
-    pub fn new(max_depth: usize) -> Searcher<N> {
+impl Searcher {
+    pub fn new(max_depth: usize, ttsize: usize) -> Self {
         Self {
             max_depth,
             chk_orderer: ChecksHistoryKillers::new(),
-            tt: TranspositionTable::new(),
+            tt: TranspositionTable::new(ttsize),
         }
     }
 
@@ -40,6 +42,7 @@ impl<const N: usize> Searcher<N> {
         &mut self,
         board: &Board,
         depth: Option<u32>,
+        movetime: f64,
     ) -> (SearchStats, Option<Move>, i32) {
         let mut ss = SearchStats::new();
         let mut bm: Option<Move> = None;
@@ -49,12 +52,17 @@ impl<const N: usize> Searcher<N> {
             None => self.max_depth,
         };
 
+        let stime = time::Instant::now();
         for i in 1..=d {
             let (bm_iter, bv_iter) =
-                self.search_internal(board, i, -PIECE_VALUE_INF, PIECE_VALUE_INF, 1, &mut ss);
+                self.search_internal(board, i, -PIECE_VALUE_INF, PIECE_VALUE_INF, 1, &mut ss, &stime, movetime);
             if bv_iter > bv {
                 bm = bm_iter;
                 bv = bv_iter;
+            }
+            let dur = stime.elapsed();
+            if dur.as_micros() as f64 / 1e6 > movetime {
+                return (ss, bm, bv);
             }
         }
         (ss, bm, bv)
@@ -68,6 +76,8 @@ impl<const N: usize> Searcher<N> {
         mut beta: i32,
         color: i32,
         stats: &mut SearchStats,
+        stime: &Instant,
+        movetime: f64,
     ) -> (Option<Move>, i32) {
         let alpha_orig = alpha;
         let hash = board.hash();
@@ -92,8 +102,11 @@ impl<const N: usize> Searcher<N> {
             }
         }
 
+        if stats.nodes_visited % 1024 == 0 && stime.elapsed().as_micros() as f64 / 1e6 >= movetime {
+            return (None, evaluate::evaluate(board));
+        }
         if depth == 0 {
-            return (None, self.quiescence(board, alpha, beta, stats));
+            return (None, self.quiescence(board, alpha, beta, stats, stime, movetime));
         }
 
         stats.nodes_visited += 1;
@@ -133,7 +146,7 @@ impl<const N: usize> Searcher<N> {
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, stime, movetime)
                 .1;
 
             if cur_value > best_value {
@@ -153,7 +166,7 @@ impl<const N: usize> Searcher<N> {
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, stime, movetime)
                 .1;
 
             if cur_value > best_value {
@@ -170,6 +183,7 @@ impl<const N: usize> Searcher<N> {
         }
 
         let tte = TTEntry {
+            hash,
             best_move: best_move.unwrap(),
             best_value,
             depth,
@@ -192,10 +206,16 @@ impl<const N: usize> Searcher<N> {
         mut alpha: i32,
         beta: i32,
         stats: &mut SearchStats,
+        stime: &Instant,
+        movetime: f64,
     ) -> i32 {
         stats.nodes_visited += 1;
 
         let stand_pat = evaluate::evaluate(board);
+
+        if stats.nodes_visited % 1024 == 0 && stime.elapsed().as_micros() as f64 / 1e6 > movetime {
+            return stand_pat;
+        }
 
         if stand_pat >= beta {
             return beta;
@@ -221,7 +241,7 @@ impl<const N: usize> Searcher<N> {
             let mut move_board = board.clone();
             move_board.play_unchecked(mv);
 
-            let new_eval = -self.quiescence(&move_board, -beta, -alpha, stats);
+            let new_eval = -self.quiescence(&move_board, -beta, -alpha, stats, stime, movetime);
 
             alpha = alpha.max(new_eval);
 
