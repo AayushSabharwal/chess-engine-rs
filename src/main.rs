@@ -1,4 +1,4 @@
-use std::{env, io::stdin, time::Instant, thread, sync::mpsc::{self, Sender}};
+use std::{env, io::stdin, time::{Instant, Duration}, thread, sync::mpsc::{self, Sender}};
 
 use crate::search::Searcher;
 use cozy_chess::{Board, Move, Square, Color};
@@ -18,8 +18,8 @@ mod utils;
 struct SearchTask {
     pub board: Board,
     pub depth: Option<u32>,
-    pub time_left: f64,
-    pub time_inc: f64,
+    pub time_left: Duration,
+    pub time_inc: Duration,
 }
 
 fn main() {
@@ -47,7 +47,7 @@ fn main() {
             Ok(r) => r,
             Err(e) => {panic!("AAA {}", e);}
         };
-        let (ss, bm, _bv) = searcher.search(&task.board, task.depth, task.time_left / 40.0 + task.time_inc);
+        let (ss, bm, _bv) = searcher.search(&task.board, task.depth, task.time_left / 40 + task.time_inc / 10);
         println!("info nodes {}", ss.nodes_visited);
         println!("{}", UciRemark::BestMove { mv: bm.unwrap(), ponder: None }.format(&options));
     }
@@ -108,11 +108,11 @@ fn uci_handler(tx: Sender<SearchTask>) {
                 UciCommand::Quit => {},
                 UciCommand::Go(opts) => {
                     tx.send(SearchTask {board: cur_board.clone(), depth: opts.depth, time_left: match cur_board.side_to_move() {
-                        Color::White => opts.wtime.unwrap().as_micros() as f64 / 1e6,
-                        Color::Black => opts.btime.unwrap().as_micros() as f64 / 1e6,
+                        Color::White => opts.wtime.unwrap(),
+                        Color::Black => opts.btime.unwrap(),
                     }, time_inc: match cur_board.side_to_move() {
-                        Color::White => opts.winc.unwrap().as_micros() as f64 / 1e6,
-                        Color::Black => opts.binc.unwrap().as_micros() as f64 / 1e6,
+                        Color::White => opts.winc.unwrap(),
+                        Color::Black => opts.binc.unwrap(),
                     }}).unwrap();
                 }
             },
@@ -133,7 +133,7 @@ fn run_benchmark() {
     for (i, fen) in include_str!("fen.csv").split("\n").take(50).enumerate() {
         let board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
-        let (stats, bm, bv) = searcher.search(&board, None, 100.0);
+        let (stats, bm, bv) = searcher.search(&board, None, Duration::from_secs(10));
         let duration = start.elapsed();
         total_nodes += stats.nodes_visited;
         total_time += duration.as_micros();
@@ -168,5 +168,5 @@ fn hyperfine() {
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    dbg!(Searcher::new(7, 100000).search(&board, None, 100.0));
+    dbg!(Searcher::new(7, 100000).search(&board, None, Duration::from_secs(10)));
 }

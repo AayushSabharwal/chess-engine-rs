@@ -1,4 +1,4 @@
-use std::time::{self, Instant};
+use std::time::{Instant, Duration};
 
 use arrayvec::ArrayVec;
 use cozy_chess::{Board, GameStatus, Move, Piece};
@@ -29,6 +29,22 @@ impl SearchStats {
     }
 }
 
+#[derive(Debug)]
+struct TimeConstraint {
+    startt: Instant,
+    movetime: Duration,
+}
+
+impl TimeConstraint {
+    pub fn new(movetime: Duration) -> Self {
+        Self {startt: Instant::now(), movetime}
+    }
+
+    pub fn time_up(&self) -> bool {
+        self.startt.elapsed() > self.movetime
+    }
+}
+
 impl Searcher {
     pub fn new(max_depth: usize, ttsize: usize) -> Self {
         Self {
@@ -42,7 +58,7 @@ impl Searcher {
         &mut self,
         board: &Board,
         depth: Option<u32>,
-        movetime: f64,
+        movetime: Duration,
     ) -> (SearchStats, Option<Move>, i32) {
         let mut ss = SearchStats::new();
         let mut bm: Option<Move> = None;
@@ -52,16 +68,16 @@ impl Searcher {
             None => self.max_depth,
         };
 
-        let stime = time::Instant::now();
+        let timer = TimeConstraint::new(movetime);
         for i in 1..=d {
             let (bm_iter, bv_iter) =
-                self.search_internal(board, i, -PIECE_VALUE_INF, PIECE_VALUE_INF, 1, &mut ss, &stime, movetime);
+                self.search_internal(board, i, -PIECE_VALUE_INF, PIECE_VALUE_INF, 1, &mut ss, &timer);
             if bv_iter > bv {
                 bm = bm_iter;
                 bv = bv_iter;
             }
-            let dur = stime.elapsed();
-            if dur.as_micros() as f64 / 1e6 > movetime {
+
+            if timer.time_up() {
                 return (ss, bm, bv);
             }
         }
@@ -76,8 +92,7 @@ impl Searcher {
         mut beta: i32,
         color: i32,
         stats: &mut SearchStats,
-        stime: &Instant,
-        movetime: f64,
+        timer: &TimeConstraint,
     ) -> (Option<Move>, i32) {
         let alpha_orig = alpha;
         let hash = board.hash();
@@ -102,11 +117,11 @@ impl Searcher {
             }
         }
 
-        if stats.nodes_visited % 1024 == 0 && stime.elapsed().as_micros() as f64 / 1e6 >= movetime {
+        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
             return (None, evaluate::evaluate(board));
         }
         if depth == 0 {
-            return (None, self.quiescence(board, alpha, beta, stats, stime, movetime));
+            return (None, self.quiescence(board, alpha, beta, stats, timer));
         }
 
         stats.nodes_visited += 1;
@@ -146,7 +161,7 @@ impl Searcher {
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, stime, movetime)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
                 .1;
 
             if cur_value > best_value {
@@ -166,7 +181,7 @@ impl Searcher {
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, stime, movetime)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
                 .1;
 
             if cur_value > best_value {
@@ -200,20 +215,19 @@ impl Searcher {
         (best_move, best_value)
     }
 
-    pub fn quiescence(
+    fn quiescence(
         &self,
         board: &Board,
         mut alpha: i32,
         beta: i32,
         stats: &mut SearchStats,
-        stime: &Instant,
-        movetime: f64,
+        timer: &TimeConstraint
     ) -> i32 {
         stats.nodes_visited += 1;
 
         let stand_pat = evaluate::evaluate(board);
 
-        if stats.nodes_visited % 1024 == 0 && stime.elapsed().as_micros() as f64 / 1e6 > movetime {
+        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
             return stand_pat;
         }
 
@@ -241,7 +255,7 @@ impl Searcher {
             let mut move_board = board.clone();
             move_board.play_unchecked(mv);
 
-            let new_eval = -self.quiescence(&move_board, -beta, -alpha, stats, stime, movetime);
+            let new_eval = -self.quiescence(&move_board, -beta, -alpha, stats, timer);
 
             alpha = alpha.max(new_eval);
 
