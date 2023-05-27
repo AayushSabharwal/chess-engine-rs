@@ -6,6 +6,7 @@ pub const NULL_MOVE: Move = Move {
     promotion: None,
 };
 
+#[inline]
 pub fn piece_to_index(ptype: Piece, pcolor: Color) -> usize {
     ptype as usize + pcolor as usize * 6
 }

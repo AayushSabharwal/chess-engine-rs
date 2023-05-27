@@ -50,6 +50,7 @@ impl TranspositionTable {
         }
     }
 
+    #[inline]
     pub fn set_entry(&mut self, h: u64, e: TTEntry) {
         self.table[h as usize % self.size] = e;
     }
