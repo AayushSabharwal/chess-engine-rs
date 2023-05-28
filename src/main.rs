@@ -1,6 +1,5 @@
 use std::{env, io::stdin, time::{Instant, Duration}, thread, sync::mpsc::{self, Sender}};
 
-use crate::search::Searcher;
 use cozy_chess::{Board, Move, Square, Color};
 use cozy_uci::{
     command::UciCommand,
@@ -8,16 +7,13 @@ use cozy_uci::{
     UciFormatOptions, UciParseErrorKind,
 };
 use UciParseErrorKind::*;
+use search::Searcher;
 mod evaluate;
-mod move_ordering;
 mod search;
-mod transposition_table;
-mod utils;
 
 #[derive(Debug)]
 struct SearchTask {
     pub board: Board,
-    pub depth: Option<u32>,
     pub time_left: Duration,
     pub time_inc: Duration,
 }
@@ -40,16 +36,16 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(7, 100000);
+    let mut searcher = Searcher::new(3);
     let options = UciFormatOptions::default();
     loop {
         let task = match rx.recv() {
             Ok(r) => r,
             Err(e) => {panic!("AAA {}", e);}
         };
-        let (ss, bm, _bv) = searcher.search(&task.board, task.depth, task.time_left / 40 + task.time_inc / 10);
+        let (ss, bm, _bv) = searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
         println!("info nodes {}", ss.nodes_visited);
-        println!("{}", UciRemark::BestMove { mv: bm.unwrap(), ponder: None }.format(&options));
+        println!("{}", UciRemark::BestMove { mv: bm, ponder: None }.format(&options));
     }
 
 }
@@ -107,7 +103,7 @@ fn uci_handler(tx: Sender<SearchTask>) {
                 UciCommand::PonderHit => {},
                 UciCommand::Quit => {},
                 UciCommand::Go(opts) => {
-                    tx.send(SearchTask {board: cur_board.clone(), depth: opts.depth, time_left: match cur_board.side_to_move() {
+                    tx.send(SearchTask {board: cur_board.clone(), time_left: match cur_board.side_to_move() {
                         Color::White => opts.wtime.unwrap(),
                         Color::Black => opts.btime.unwrap(),
                     }, time_inc: match cur_board.side_to_move() {
@@ -127,28 +123,29 @@ fn uci_handler(tx: Sender<SearchTask>) {
 }
 
 fn run_benchmark() {
-    let mut searcher: Searcher = Searcher::new(7, 100000);
+    let mut searcher: Searcher = Searcher::new(5);
     let mut total_nodes = 0;
     let mut total_time = 0;
     for (i, fen) in include_str!("fen.csv").split("\n").take(50).enumerate() {
         let board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
-        let (stats, bm, bv) = searcher.search(&board, None, Duration::from_secs(10));
+        let (stats, bm, bv) = searcher.search(&board, Duration::from_secs(10));
         let duration = start.elapsed();
         total_nodes += stats.nodes_visited;
         total_time += duration.as_micros();
 
         println!(
             "Position [{i:02}]: Move {:} Value {bv:8} | {:10} Nodes in {:6.3}s at {:10.2} KNPS",
-            if bm.is_none() {
-                Move {
-                    from: Square::A1,
-                    to: Square::A1,
-                    promotion: None,
-                }
-            } else {
-                bm.unwrap()
-            },
+            bm,
+            // if bm.is_none() {
+            //     Move {
+            //         from: Square::A1,
+            //         to: Square::A1,
+            //         promotion: None,
+            //     }
+            // } else {
+            //     bm.unwrap()
+            // },
             stats.nodes_visited,
             duration.as_micros() as f64 / 1e6,
             stats.nodes_visited as f64 / duration.as_micros() as f64 * 1e3
@@ -168,5 +165,5 @@ fn hyperfine() {
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    dbg!(Searcher::new(8, 100000).search(&board, None, Duration::from_secs(10)));
+    dbg!(Searcher::new(5).search(&board, Duration::from_secs(10)));
 }
