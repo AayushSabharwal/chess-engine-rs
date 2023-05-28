@@ -77,8 +77,12 @@ impl Searcher {
     ) -> (Option<Move>, i32) {
         stats.nodes_visited += 1;
 
-        if depth == 0 || stats.nodes_visited % 1024 == 0 && timer.time_up() {
+        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
             return (None, evaluate::evaluate(board));
+        }
+
+        if depth == 0 {
+            return (None, self.qsearch(board, alpha, beta, timer, stats));
         }
 
         if board.status() == GameStatus::Won {
@@ -95,14 +99,14 @@ impl Searcher {
             false
         });
 
-        let mut best_value = i32::MIN;
+        let mut best_value = i16::MIN as i32;
         let mut best_move = None;
         for mv in move_buf {
             let mut move_board = board.clone();
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(board, depth - 1, -beta, -alpha, -color, timer, stats)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, timer, stats)
                 .1;
 
             if cur_value > best_value {
@@ -118,5 +122,41 @@ impl Searcher {
         }
 
         (best_move, best_value)
+    }
+
+    pub fn qsearch(&self, board: &Board, mut alpha: i32, beta: i32, timer: &TimeControl, stats: &mut SearchStats) -> i32 {
+        let stand_pat = evaluate::evaluate(board);
+        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
+            return stand_pat;
+        }
+
+        if stand_pat >= beta {
+            return beta;
+        }
+        alpha = alpha.max(stand_pat);
+
+        let mut move_buf = ArrayVec::<Move, 218>::new();
+        let enemy = board.colors(!board.side_to_move());
+        board.generate_moves(|mut moves| {
+            moves.to &= enemy;
+            for mv in moves {
+                move_buf.push(mv);
+            }
+            false
+        });
+
+        for mv in move_buf {
+            let mut move_board = board.clone();
+            move_board.play_unchecked(mv);
+
+            let cur_value = -self.qsearch(&move_board, -beta, -alpha, timer, stats);
+
+            alpha = alpha.max(cur_value);
+            if alpha >= beta {
+                return beta;
+            }
+        }
+
+        alpha
     }
 }
