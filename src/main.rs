@@ -168,5 +168,5 @@ fn hyperfine() {
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    dbg!(Searcher::new(7, 100000).search(&board, None, Duration::from_secs(10)));
+    dbg!(Searcher::new(8, 100000).search(&board, None, Duration::from_secs(10)));
 }

@@ -2,6 +2,7 @@ use cozy_chess::{Board, Piece};
 
 pub const PIECE_VALUES: [i32; 6] = [100, 250, 300, 500, 900, 10000];
 
+#[inline]
 pub fn piece_value(p: Piece) -> i32 {
     PIECE_VALUES[p as usize]
 }

@@ -5,8 +5,8 @@ use cozy_chess::{Board, GameStatus, Move, Piece};
 
 use crate::{
     evaluate::{self, piece_value},
-    move_ordering::{self, ChecksHistoryKillers, MoveOrderer, MVVLVA},
-    transposition_table::{TTEntry, TTNodeType, TranspositionTable},
+    move_ordering::{self, ChecksHistoryKillers, MoveOrderer, MVVLVA, ComprehensiveMoveCollector},
+    transposition_table::{TTEntry, TTNodeType, TranspositionTable}, utils::{NULL_MOVE, self},
 };
 
 const PIECE_VALUE_INF: i32 = 900 * 64;
@@ -15,6 +15,8 @@ const PIECE_VALUE_INF: i32 = 900 * 64;
 pub struct Searcher {
     max_depth: usize,
     chk_orderer: ChecksHistoryKillers,
+    killer: Vec<Move>,
+    history: Vec<usize>,
     tt: TranspositionTable,
 }
 
@@ -50,6 +52,8 @@ impl Searcher {
         Self {
             max_depth,
             chk_orderer: ChecksHistoryKillers::new(),
+            killer: vec![NULL_MOVE; max_depth + 1],
+            history: vec![0; 64 * 12],
             tt: TranspositionTable::new(ttsize),
         }
     }
@@ -134,68 +138,92 @@ impl Searcher {
             return (None, 0);
         }
 
-        let mut captures_buffer = ArrayVec::<Move, 256>::new();
-        let mut move_buffer = ArrayVec::<Move, 256>::new();
-        let enemy = board.colors(!board.side_to_move());
-
-        board.generate_moves(|moves| {
-            for mv in moves {
-                if enemy.has(mv.to) {
-                    captures_buffer.push(mv);
-                } else {
-                    move_buffer.push(mv);
-                }
-            }
-            false
-        });
-
-        MVVLVA.order_moves(board, &mut captures_buffer, depth);
-        self.chk_orderer.order_moves(board, &mut move_buffer, depth);
-
+        let move_collector = ComprehensiveMoveCollector::new(board, self.killer[depth], &self.history);
         let mut best_move: Option<Move> = None;
         let mut best_value = i32::MIN;
-
-        for mv in captures_buffer {
+        for (iscapture, mv) in move_collector {
             let mut move_board = board.clone();
-
             move_board.play_unchecked(mv);
-
             let cur_value = -self
                 .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
                 .1;
 
             if cur_value > best_value {
-                best_move = Some(mv);
                 best_value = cur_value;
+                best_move = Some(mv);
             }
 
             alpha = alpha.max(best_value);
             if alpha >= beta {
+                if iscapture {
+                    self.killer[depth] = mv;
+                    self.history[utils::get_history_index(board.piece_on(mv.from).unwrap(), board.color_on(mv.from).unwrap(), mv.to)] += depth * depth;
+                }
                 break;
             }
         }
+        // let mut captures_buffer = ArrayVec::<Move, 256>::new();
+        // let mut move_buffer = ArrayVec::<Move, 256>::new();
+        // let enemy = board.colors(!board.side_to_move());
 
-        for mv in move_buffer {
-            let mut move_board = board.clone();
+        // board.generate_moves(|moves| {
+        //     for mv in moves {
+        //         if enemy.has(mv.to) {
+        //             captures_buffer.push(mv);
+        //         } else {
+        //             move_buffer.push(mv);
+        //         }
+        //     }
+        //     false
+        // });
 
-            move_board.play_unchecked(mv);
+        // MVVLVA.order_moves(board, &mut captures_buffer, depth);
+        // self.chk_orderer.order_moves(board, &mut move_buffer, depth);
 
-            let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
-                .1;
+        // let mut best_move: Option<Move> = None;
+        // let mut best_value = i32::MIN;
 
-            if cur_value > best_value {
-                best_move = Some(mv);
-                best_value = cur_value;
-            }
+        // for mv in captures_buffer {
+        //     let mut move_board = board.clone();
 
-            alpha = alpha.max(best_value);
-            if alpha >= beta {
-                self.chk_orderer.add_to_history(board, &mv, depth);
-                self.chk_orderer.add_to_killers(mv, depth);
-                break;
-            }
-        }
+        //     move_board.play_unchecked(mv);
+
+        //     let cur_value = -self
+        //         .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
+        //         .1;
+
+        //     if cur_value > best_value {
+        //         best_move = Some(mv);
+        //         best_value = cur_value;
+        //     }
+
+        //     alpha = alpha.max(best_value);
+        //     if alpha >= beta {
+        //         break;
+        //     }
+        // }
+
+        // for mv in move_buffer {
+        //     let mut move_board = board.clone();
+
+        //     move_board.play_unchecked(mv);
+
+        //     let cur_value = -self
+        //         .search_internal(&move_board, depth - 1, -beta, -alpha, -color, stats, timer)
+        //         .1;
+
+        //     if cur_value > best_value {
+        //         best_move = Some(mv);
+        //         best_value = cur_value;
+        //     }
+
+        //     alpha = alpha.max(best_value);
+        //     if alpha >= beta {
+        //         self.chk_orderer.add_to_history(board, &mv, depth);
+        //         self.chk_orderer.add_to_killers(mv, depth);
+        //         break;
+        //     }
+        // }
 
         let tte = TTEntry {
             hash,
