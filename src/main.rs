@@ -36,7 +36,8 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(3);
+    let mut searcher = Searcher::new(6);
+
     let options = UciFormatOptions::default();
     loop {
         let task = match rx.recv() {
@@ -165,5 +166,5 @@ fn hyperfine() {
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    dbg!(Searcher::new(5).search(&board, Duration::from_secs(10)));
+    dbg!(Searcher::new(8).search(&board, Duration::from_secs(10)));
 }

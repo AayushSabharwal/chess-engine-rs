@@ -52,7 +52,7 @@ impl Searcher {
         let mut stats = SearchStats::new();
         let timer = TimeControl::new(move_time);
         for i in 1..=self.max_depth {
-            let (mv, val) = self.search_internal(board, i, 1, &timer, &mut stats);
+            let (mv, val) = self.search_internal(board, i, i16::MIN as i32, i16::MAX as i32, 1, &timer, &mut stats);
 
             if timer.time_up() {
                 break;
@@ -69,6 +69,8 @@ impl Searcher {
         &self,
         board: &Board,
         depth: usize,
+        mut alpha: i32,
+        beta: i32,
         color: i32,
         timer: &TimeControl,
         stats: &mut SearchStats,
@@ -100,12 +102,18 @@ impl Searcher {
             move_board.play_unchecked(mv);
 
             let cur_value = -self
-                .search_internal(board, depth - 1, -color, timer, stats)
+                .search_internal(board, depth - 1, -beta, -alpha, -color, timer, stats)
                 .1;
 
             if cur_value > best_value {
                 best_value = cur_value;
                 best_move = Some(mv);
+            }
+
+            alpha = alpha.max(best_value);
+
+            if alpha >= beta {
+                break;
             }
         }
 
