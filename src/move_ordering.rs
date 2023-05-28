@@ -4,7 +4,7 @@ use cozy_chess::{Board, Move};
 use crate::{evaluate, utils};
 use crate::utils::{piece_to_index, NULL_MOVE};
 
-fn move_eval_selection_sort_iter<T>(move_evals: &mut ArrayVec<(Move, T), 218>, cur: usize) -> Move where T: Ord {
+fn move_eval_selection_sort_iter<T,const S: usize>(move_evals: &mut ArrayVec<(Move, T), S>, cur: usize) -> Move where T: Ord {
     let mut i = cur + 1;
     while i < move_evals.len() {
         if move_evals[i].1 > move_evals[cur].1 {
@@ -20,7 +20,7 @@ fn move_eval_selection_sort_iter<T>(move_evals: &mut ArrayVec<(Move, T), 218>, c
 }
 
 pub struct CaptureMoveCollector {
-    move_evals: ArrayVec<(Move, (i32, i32)), 218>,
+    move_evals: ArrayVec<(Move, (i32, i32)), 100>,
 }
 
 impl CaptureMoveCollector {
@@ -76,13 +76,15 @@ impl Iterator for CaptureMoveIterator {
 }
 
 pub struct ComprehensiveMoveCollector {
-    poscaptures: ArrayVec<(Move, (i32, i32)), 218>,
-    negcaptures: ArrayVec<(Move, (i32, i32)), 218>,
+    ttmove: Option<Move>,
+    ttmove_capture: bool,
+    poscaptures: ArrayVec<(Move, (i32, i32)), 100>,
+    negcaptures: ArrayVec<(Move, (i32, i32)), 100>,
     noncaptures: ArrayVec<(Move, usize), 218>,
 }
 
 impl ComprehensiveMoveCollector {
-    pub fn new(board: &Board, killer: Move, history: &Vec<usize>) -> Self {
+    pub fn new(board: &Board, killer: Move, history: &Vec<usize>, ttmove: Option<Move>) -> Self {
         let mut poscaptures = ArrayVec::new();
         let mut negcaptures = ArrayVec::new();
         let mut noncaptures = ArrayVec::new();
@@ -117,6 +119,8 @@ impl ComprehensiveMoveCollector {
         });
 
         Self {
+            ttmove,
+            ttmove_capture: if let Some(mv) = ttmove { board.is_legal(mv) && enemy.has(mv.to) } else {false},
             poscaptures,
             negcaptures,
             noncaptures,
@@ -130,8 +134,10 @@ impl IntoIterator for ComprehensiveMoveCollector {
     type IntoIter = ComprehensiveMoveIterator;
 
     fn into_iter(self) -> Self::IntoIter {
+        let done_ttmove = self.ttmove.is_none();
         Self::IntoIter {
             col: self,
+            done_ttmove,
             poscapture_cur: 0,
             negcapture_cur: 0,
             noncapture_cur: 0,
@@ -141,6 +147,7 @@ impl IntoIterator for ComprehensiveMoveCollector {
 
 pub struct ComprehensiveMoveIterator {
     col: ComprehensiveMoveCollector,
+    done_ttmove: bool,
     poscapture_cur: usize,
     negcapture_cur: usize,
     noncapture_cur: usize,
@@ -150,7 +157,11 @@ impl Iterator for ComprehensiveMoveIterator {
     type Item = (bool, Move);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.poscapture_cur < self.col.poscaptures.len() {
+        if !self.done_ttmove {
+            self.done_ttmove = true;
+            Some((self.col.ttmove_capture, self.col.ttmove.unwrap()))
+        }
+        else if self.poscapture_cur < self.col.poscaptures.len() {
             let best_move = move_eval_selection_sort_iter(&mut self.col.poscaptures, self.poscapture_cur);
             self.poscapture_cur += 1;
             Some((true, best_move))

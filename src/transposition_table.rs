@@ -28,14 +28,14 @@ const NULL_TTE: TTEntry = TTEntry {
 
 #[derive(Debug)]
 pub struct TranspositionTable {
-    table: Vec<TTEntry>,
+    table: Vec<Option<TTEntry>>,
     size: usize
 }
 
 impl TranspositionTable {
     pub fn new(size: usize) -> Self {
         Self {
-            table: vec![NULL_TTE; size],
+            table: vec![None; size],
             size,
         }
     }
@@ -43,15 +43,18 @@ impl TranspositionTable {
     pub fn get_entry(&self, h: u64) -> Option<TTEntry> {
         let val = self.table[h as usize % self.size];
 
-        if val != NULL_TTE && val.hash != h {
-            None
+        if let Some(tte) = val {
+            if tte.hash != h {
+                return None
+            }
+            val
         } else {
-            Some(val)
+            val
         }
     }
 
     #[inline]
     pub fn set_entry(&mut self, h: u64, e: TTEntry) {
-        self.table[h as usize % self.size] = e;
+        self.table[h as usize % self.size] = Some(e);
     }
 }

@@ -101,6 +101,7 @@ impl Searcher {
         let alpha_orig = alpha;
         let hash = board.hash();
 
+        let mut ttmove = None;
         if let Some(tte) = self.tt.get_entry(hash) {
             if tte.depth >= depth {
                 match tte.node_type {
@@ -119,6 +120,8 @@ impl Searcher {
                     return (Some(tte.best_move), tte.best_value);
                 }
             }
+
+            ttmove = Some(tte.best_move);
         }
 
         if stats.nodes_visited % 1024 == 0 && timer.time_up() {
@@ -138,10 +141,13 @@ impl Searcher {
             return (None, 0);
         }
 
-        let move_collector = ComprehensiveMoveCollector::new(board, self.killer[depth], &self.history);
+        let move_collector = ComprehensiveMoveCollector::new(board, self.killer[depth], &self.history, ttmove);
         let mut best_move: Option<Move> = None;
         let mut best_value = i32::MIN;
         for (iscapture, mv) in move_collector {
+            if !board.is_legal(mv) {
+                panic!("{mv} ILLEGAL");
+            }
             let mut move_board = board.clone();
             move_board.play_unchecked(mv);
             let cur_value = -self
