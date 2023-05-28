@@ -1,6 +1,6 @@
 use std::{env, io::stdin, time::{Instant, Duration}, thread, sync::mpsc::{self, Sender}};
 
-use cozy_chess::{Board, Move, Square, Color};
+use cozy_chess::{Board, Move, Square, Color, Rank, File};
 use cozy_uci::{
     command::UciCommand,
     remark::{UciIdInfo, UciRemark},
@@ -8,6 +8,7 @@ use cozy_uci::{
 };
 use UciParseErrorKind::*;
 use search::Searcher;
+mod psqts;
 mod evaluate;
 mod search;
 

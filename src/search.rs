@@ -57,7 +57,7 @@ impl Searcher {
             if timer.time_up() {
                 break;
             }
-
+            eprintln!("{:?} {}", mv, val);
             best_move = mv;
             best_value = val;
         }
