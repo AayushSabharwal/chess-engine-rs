@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use arrayvec::ArrayVec;
 use cozy_chess::{Board, GameStatus, Move, Piece};
 
-use crate::evaluate::{self, PIECE_VALUES};
+use crate::{evaluate::{self, PIECE_VALUES}, move_ordering::CaptureMovesIterator};
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -57,7 +57,7 @@ impl Searcher {
             if timer.time_up() {
                 break;
             }
-            eprintln!("{:?} {}", mv, val);
+
             best_move = mv;
             best_value = val;
         }
@@ -103,7 +103,7 @@ impl Searcher {
         let mut best_move = None;
         for mv in move_buf {
             let mut move_board = board.clone();
-            move_board.play_unchecked(mv);
+            move_board.play(mv);
 
             let cur_value = -self
                 .search_internal(&move_board, depth - 1, -beta, -alpha, -color, timer, stats)
@@ -125,6 +125,7 @@ impl Searcher {
     }
 
     pub fn qsearch(&self, board: &Board, mut alpha: i32, beta: i32, timer: &TimeControl, stats: &mut SearchStats) -> i32 {
+        stats.nodes_visited += 1;
         let stand_pat = evaluate::evaluate(board);
         if stats.nodes_visited % 1024 == 0 && timer.time_up() {
             return stand_pat;
@@ -135,19 +136,20 @@ impl Searcher {
         }
         alpha = alpha.max(stand_pat);
 
-        let mut move_buf = ArrayVec::<Move, 218>::new();
-        let enemy = board.colors(!board.side_to_move());
-        board.generate_moves(|mut moves| {
-            moves.to &= enemy;
-            for mv in moves {
-                move_buf.push(mv);
-            }
-            false
-        });
+        // let mut move_buf = ArrayVec::<Move, 218>::new();
+        // let enemy = board.colors(!board.side_to_move());
+        // board.generate_moves(|mut moves| {
+        //     moves.to &= enemy;
+        //     for mv in moves {
+        //         move_buf.push(mv);
+        //     }
+        //     false
+        // });
 
+        let move_buf = CaptureMovesIterator::new(board);
         for mv in move_buf {
             let mut move_board = board.clone();
-            move_board.play_unchecked(mv);
+            move_board.play(mv);
 
             let cur_value = -self.qsearch(&move_board, -beta, -alpha, timer, stats);
 

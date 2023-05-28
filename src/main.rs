@@ -1,6 +1,6 @@
 use std::{env, io::stdin, time::{Instant, Duration}, thread, sync::mpsc::{self, Sender}};
 
-use cozy_chess::{Board, Move, Square, Color, Rank, File};
+use cozy_chess::{Board, Move, Square, Color, Rank, File, Piece};
 use cozy_uci::{
     command::UciCommand,
     remark::{UciIdInfo, UciRemark},
@@ -10,6 +10,7 @@ use UciParseErrorKind::*;
 use search::Searcher;
 mod psqts;
 mod evaluate;
+mod move_ordering;
 mod search;
 
 #[derive(Debug)]
@@ -37,7 +38,7 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(5);
+    let mut searcher = Searcher::new(3);
 
     let options = UciFormatOptions::default();
     loop {
@@ -45,8 +46,16 @@ fn main() {
             Ok(r) => r,
             Err(e) => {panic!("AAA {}", e);}
         };
+        println!("{}", task.board);
         let (ss, bm, _bv) = searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
+        task.board.generate_moves(|moves| {
+            for mv in moves {
+                println!("{:?}", mv);
+            }
+            false
+        });
         println!("info nodes {}", ss.nodes_visited);
+        println!("{:?}", bm);
         println!("{}", UciRemark::BestMove { mv: bm, ponder: None }.format(&options));
     }
 
@@ -80,21 +89,14 @@ fn uci_handler(tx: Sender<SearchTask>) {
                 UciCommand::Position { init_pos, moves } => {
                     cur_board = Board::from(init_pos);
                     for mut mv in moves {
-                        if mv.from == Square::E1 {
-                            if mv.to == Square::G1 {
-                                mv.to = Square::H1;
-                            }
-                            else if mv.to == Square::C1 {
-                                mv.to = Square::A1;
-                            }
-                        }
-                        else if mv.from == Square::E8 {
-                            if mv.to == Square::G8 {
-                                mv.to = Square::H8;
-                            }
-                            else if mv.to == Square::C8 {
-                                mv.to = Square::A8;
-                            }
+                        if cur_board.piece_on(mv.from) == Some(Piece::King) && cur_board.piece_on(mv.to) != Some(Piece::Rook) {
+                            mv.to = match (mv.from, mv.to) {
+                                (Square::E1, Square::G1) => Square::H1,
+                                (Square::E8, Square::G8) => Square::H8,
+                                (Square::E1, Square::C1) => Square::A1,
+                                (Square::E8, Square::C8) => Square::A8,
+                                _ => mv.to,
+                            };
                         }
                         cur_board.play_unchecked(mv);
                     }
@@ -163,9 +165,13 @@ fn run_benchmark() {
 }
 
 fn hyperfine() {
-    let board = "r1br1nk1/ppq1bpp1/4p2p/8/4N2P/P3P3/1PQBBPP1/2R1K2R b K - 0 17"
+    // let board = "r1br1nk1/ppq1bpp1/4p2p/8/4N2P/P3P3/1PQBBPP1/2R1K2R b K - 0 17"
+    let board = "r1b1kb1r/p2n1pp1/2n1p2p/qpppP3/8/N2P1NP1/PPP1QPBP/R1B2RK1 w kq - 2 10"
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    dbg!(Searcher::new(8).search(&board, Duration::from_secs(10)));
+    for i in 1..=5 {
+
+    dbg!(Searcher::new(i).search(&board, Duration::from_secs(10)));
+    }
 }
