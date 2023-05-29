@@ -170,11 +170,47 @@ fn run_benchmark() {
 
 fn hyperfine() {
     // let board = "r1br1nk1/ppq1bpp1/4p2p/8/4N2P/P3P3/1PQBBPP1/2R1K2R b K - 0 17"
-    let board = "r1b1kb1r/p2n1pp1/2n1p2p/qpppP3/8/N2P1NP1/PPP1QPBP/R1B2RK1 w kq - 2 10"
+    let board = "r5rk/pp1np1bn/2pp2q1/3P1bN1/2P1N2Q/1P6/PB2PPBP/3R1RK1 w - - 0 1"
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
     for i in 1..=5 {
         dbg!(Searcher::new(i).search(&board, Duration::from_secs(10)));
     }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{fs, time::Duration};
+
+    use cozy_chess::{Board, GameStatus};
+
+    use crate::search::{Searcher, MATE_VALUE};
+
+    fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
+        let ply = 2 * mate_in - 1;
+        let searcher = Searcher::new(ply);
+        for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
+            let mut board = Board::from_fen(fen, false).unwrap();
+            let (_, mut bm, bv) = searcher.search(&board, Duration::from_secs(10));
+            board.play(bm);
+            assert!(bv > MATE_VALUE - 100);
+            for _ in 1..ply {
+                (_, bm, _) = searcher.search(&board, Duration::from_secs(10));
+                board.play(bm);
+            }
+            assert_eq!(board.status(), GameStatus::Won);
+        }
+    }
+
+    #[test]
+    fn test_mate_in_one() {
+        mate_in_i(1, "test_data/m1.txt", 64);
+    }
+
+    #[test]
+    fn test_mate_in_two() {
+        mate_in_i(2, "test_data/m2.txt", 100);
+    }
+
 }

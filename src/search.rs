@@ -8,6 +8,8 @@ use crate::{
     move_ordering::CaptureMovesIterator,
 };
 
+pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
+
 #[derive(Debug)]
 pub struct TimeControl {
     startt: Instant,
@@ -58,6 +60,7 @@ impl Searcher {
             let (mv, val) = self.search_internal(
                 board,
                 i,
+                0,
                 i16::MIN as i32,
                 i16::MAX as i32,
                 &timer,
@@ -79,12 +82,19 @@ impl Searcher {
         &self,
         board: &Board,
         depth: usize,
+        ply: i32,
         mut alpha: i32,
         beta: i32,
         timer: &TimeControl,
         stats: &mut SearchStats,
     ) -> (Option<Move>, i32) {
         stats.nodes_visited += 1;
+
+        if board.status() == GameStatus::Won {
+            return (None, -(MATE_VALUE - ply));
+        } else if board.status() == GameStatus::Drawn {
+            return (None, 0);
+        }
 
         if stats.nodes_visited % 1024 == 0 && timer.time_up() {
             return (None, evaluate::evaluate(board));
@@ -94,11 +104,6 @@ impl Searcher {
             return (None, self.qsearch(board, alpha, beta, timer, stats));
         }
 
-        if board.status() == GameStatus::Won {
-            return (None, -PIECE_VALUES[Piece::King as usize]);
-        } else if board.status() == GameStatus::Drawn {
-            return (None, 0);
-        }
 
         let mut move_buf = ArrayVec::<Move, 218>::new();
         board.generate_moves(|moves| {
@@ -115,7 +120,7 @@ impl Searcher {
             move_board.play(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, timer, stats)
+                .search_internal(&move_board, depth - 1, ply + 1, -beta, -alpha, timer, stats)
                 .1;
 
             if cur_value > best_value {
