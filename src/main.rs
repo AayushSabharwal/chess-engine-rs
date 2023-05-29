@@ -49,7 +49,7 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(5, 100000);
+    let mut searcher = Searcher::new(100, 100000);
 
     let options = UciFormatOptions::default();
     loop {
@@ -61,7 +61,7 @@ fn main() {
         };
 
         let (ss, mut bm, _bv) =
-            searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
+            searcher.search(&task.board, task.time_left / 20 + task.time_inc / 2);
 
         println!("info nodes {}", ss.nodes_visited);
 

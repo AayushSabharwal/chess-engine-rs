@@ -5,7 +5,7 @@ use cozy_chess::{Board, GameStatus, Move, Piece, Square};
 
 use crate::{
     evaluate::{self, PIECE_VALUES},
-    move_ordering::{CaptureMovesIterator, ComprehensiveMovesIterator},
+    move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
 };
 
@@ -45,6 +45,7 @@ impl SearchStats {
 pub struct Searcher {
     max_depth: usize,
     tt: TranspositionTable,
+    stop_search: bool,
 }
 
 impl Searcher {
@@ -52,6 +53,7 @@ impl Searcher {
         Self {
             max_depth,
             tt: TranspositionTable::new(tt_size),
+            stop_search: false,
         }
     }
 
@@ -61,6 +63,7 @@ impl Searcher {
 
         let mut stats = SearchStats::new();
         let timer = TimeControl::new(move_time);
+        self.stop_search = false;
         for i in 1..=self.max_depth {
             let (mv, val) = self.search_internal(
                 board,
@@ -72,7 +75,7 @@ impl Searcher {
                 &mut stats,
             );
 
-            if timer.time_up() {
+            if self.stop_search || timer.time_up() {
                 break;
             }
 
@@ -94,6 +97,11 @@ impl Searcher {
         stats: &mut SearchStats,
     ) -> (Option<Move>, i32) {
         stats.nodes_visited += 1;
+
+        if self.stop_search || stats.nodes_visited % 1024 == 0 && timer.time_up() {
+            self.stop_search = true;
+            return (None, evaluate::evaluate(board));
+        }
 
         let alpha_orig = alpha;
 
@@ -129,32 +137,28 @@ impl Searcher {
             return (None, 0);
         }
 
-        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
-            return (None, evaluate::evaluate(board));
-        }
-
         if depth == 0 {
             return (None, evaluate::evaluate(board));
         }
 
-        let mut move_buf = ArrayVec::<Move, 218>::new();
-        board.generate_moves(|moves| {
-            for mv in moves {
-                move_buf.push(mv);
+        // let mut move_buf = ArrayVec::<Move, 218>::new();
+        // board.generate_moves(|moves| {
+        //     for mv in moves {
+        //         move_buf.push(mv);
 
-                if mv == tt_move {
-                    let idx = move_buf.len() - 1;
-                    move_buf.swap(0, idx);
-                }
-            }
-            false
-        });
+        //         if mv == tt_move {
+        //             let idx = move_buf.len() - 1;
+        //             move_buf.swap(0, idx);
+        //         }
+        //     }
+        //     false
+        // });
 
-        // let it = ComprehensiveMovesIterator::new(board, tt_move);
+        let it = MovesIterator::with_all_moves(board, tt_move);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move { from: Square::A1, to: Square::A1, promotion: None };
-        for mv in move_buf {
-        // for (mv, _iscap) in it {
+        // for mv in move_buf {
+        for (mv, _iscap) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
 
@@ -225,8 +229,8 @@ impl Searcher {
         //     false
         // });
 
-        let move_buf = CaptureMovesIterator::new(board);
-        for mv in move_buf {
+        let move_buf = MovesIterator::with_capture_moves(board);
+        for (mv, _) in move_buf {
             let mut move_board = board.clone();
             move_board.play(mv);
 
