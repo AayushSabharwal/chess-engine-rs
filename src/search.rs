@@ -5,7 +5,7 @@ use cozy_chess::{Board, GameStatus, Move, Piece, Square};
 
 use crate::{
     evaluate::{self, PIECE_VALUES},
-    move_ordering::CaptureMovesIterator,
+    move_ordering::{CaptureMovesIterator, ComprehensiveMovesIterator},
     transposition_table::{NodeType, TTEntry, TranspositionTable},
 };
 
@@ -134,7 +134,7 @@ impl Searcher {
         }
 
         if depth == 0 {
-            return (None, self.qsearch(board, alpha, beta, timer, stats));
+            return (None, evaluate::evaluate(board));
         }
 
         let mut move_buf = ArrayVec::<Move, 218>::new();
@@ -150,9 +150,11 @@ impl Searcher {
             false
         });
 
+        // let it = ComprehensiveMovesIterator::new(board, tt_move);
         let mut best_value = i16::MIN as i32;
-        let mut best_move = move_buf[0];
+        let mut best_move = Move { from: Square::A1, to: Square::A1, promotion: None };
         for mv in move_buf {
+        // for (mv, _iscap) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
 

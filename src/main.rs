@@ -49,7 +49,7 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(3, 100000);
+    let mut searcher = Searcher::new(5, 100000);
 
     let options = UciFormatOptions::default();
     loop {
