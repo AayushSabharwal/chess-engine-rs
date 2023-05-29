@@ -60,7 +60,6 @@ impl Searcher {
                 i,
                 i16::MIN as i32,
                 i16::MAX as i32,
-                1,
                 &timer,
                 &mut stats,
             );
@@ -82,7 +81,6 @@ impl Searcher {
         depth: usize,
         mut alpha: i32,
         beta: i32,
-        color: i32,
         timer: &TimeControl,
         stats: &mut SearchStats,
     ) -> (Option<Move>, i32) {
@@ -97,7 +95,7 @@ impl Searcher {
         }
 
         if board.status() == GameStatus::Won {
-            return (None, color * -PIECE_VALUES[Piece::King as usize]);
+            return (None, -PIECE_VALUES[Piece::King as usize]);
         } else if board.status() == GameStatus::Drawn {
             return (None, 0);
         }
@@ -117,7 +115,7 @@ impl Searcher {
             move_board.play(mv);
 
             let cur_value = -self
-                .search_internal(&move_board, depth - 1, -beta, -alpha, -color, timer, stats)
+                .search_internal(&move_board, depth - 1, -beta, -alpha, timer, stats)
                 .1;
 
             if cur_value > best_value {
