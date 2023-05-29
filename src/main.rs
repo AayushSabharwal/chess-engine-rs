@@ -21,6 +21,7 @@ mod evaluate;
 mod move_ordering;
 mod psqts;
 mod search;
+mod transposition_table;
 mod utils;
 
 #[derive(Debug)]
@@ -48,7 +49,7 @@ fn main() {
         uci_handler(tx);
     });
 
-    let searcher = Searcher::new(3);
+    let mut searcher = Searcher::new(3, 100000);
 
     let options = UciFormatOptions::default();
     loop {
@@ -140,7 +141,7 @@ fn uci_handler(tx: Sender<SearchTask>) {
 }
 
 fn run_benchmark() {
-    let searcher: Searcher = Searcher::new(5);
+    let mut searcher: Searcher = Searcher::new(5, 100000);
     let mut total_nodes = 0;
     let mut total_time = 0;
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
@@ -174,9 +175,8 @@ fn hyperfine() {
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
-    for i in 1..=5 {
-        dbg!(Searcher::new(i).search(&board, Duration::from_secs(10)));
-    }
+    //
+    dbg!(Searcher::new(5, 100000).search(&board, Duration::from_secs(10)));
 }
 
 #[cfg(test)]
@@ -189,7 +189,7 @@ mod test {
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;
-        let searcher = Searcher::new(ply);
+        let mut searcher = Searcher::new(ply, 100000);
         for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
             let mut board = Board::from_fen(fen, false).unwrap();
             let (_, mut bm, bv) = searcher.search(&board, Duration::from_secs(10));
@@ -212,5 +212,4 @@ mod test {
     fn test_mate_in_two() {
         mate_in_i(2, "test_data/m2.txt", 100);
     }
-
 }

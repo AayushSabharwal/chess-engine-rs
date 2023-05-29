@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
 
 use arrayvec::ArrayVec;
-use cozy_chess::{Board, GameStatus, Move, Piece};
+use cozy_chess::{Board, GameStatus, Move, Piece, Square};
 
 use crate::{
     evaluate::{self, PIECE_VALUES},
     move_ordering::CaptureMovesIterator,
+    transposition_table::{NodeType, TTEntry, TranspositionTable},
 };
 
 pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
@@ -43,14 +44,18 @@ impl SearchStats {
 #[derive(Debug)]
 pub struct Searcher {
     max_depth: usize,
+    tt: TranspositionTable,
 }
 
 impl Searcher {
-    pub fn new(max_depth: usize) -> Self {
-        Self { max_depth }
+    pub fn new(max_depth: usize, tt_size: usize) -> Self {
+        Self {
+            max_depth,
+            tt: TranspositionTable::new(tt_size),
+        }
     }
 
-    pub fn search(&self, board: &Board, move_time: Duration) -> (SearchStats, Move, i32) {
+    pub fn search(&mut self, board: &Board, move_time: Duration) -> (SearchStats, Move, i32) {
         let mut best_move = None;
         let mut best_value = 0;
 
@@ -79,16 +84,44 @@ impl Searcher {
     }
 
     fn search_internal(
-        &self,
+        &mut self,
         board: &Board,
         depth: usize,
         ply: i32,
         mut alpha: i32,
-        beta: i32,
+        mut beta: i32,
         timer: &TimeControl,
         stats: &mut SearchStats,
     ) -> (Option<Move>, i32) {
         stats.nodes_visited += 1;
+
+        let alpha_orig = alpha;
+
+        let board_hash = board.hash();
+        let tt_res = self.tt.get(board_hash);
+        let mut tt_move = Move {
+            from: Square::A1,
+            to: Square::A1,
+            promotion: None,
+        };
+        if let Some(tte) = tt_res {
+            if tte.depth >= depth {
+                match tte.node_type {
+                    NodeType::Exact => return (Some(tte.best_move), tte.best_value),
+                    NodeType::LowerBound => {
+                        beta = beta.min(tte.best_value);
+                    }
+                    NodeType::UpperBound => {
+                        alpha = alpha.max(tte.best_value);
+                    }
+                }
+                if alpha >= beta {
+                    return (Some(tte.best_move), tte.best_value);
+                }
+            }
+
+            tt_move = tte.best_move;
+        }
 
         if board.status() == GameStatus::Won {
             return (None, -(MATE_VALUE - ply));
@@ -104,17 +137,21 @@ impl Searcher {
             return (None, self.qsearch(board, alpha, beta, timer, stats));
         }
 
-
         let mut move_buf = ArrayVec::<Move, 218>::new();
         board.generate_moves(|moves| {
             for mv in moves {
                 move_buf.push(mv);
+
+                if mv == tt_move {
+                    let idx = move_buf.len() - 1;
+                    move_buf.swap(0, idx);
+                }
             }
             false
         });
 
         let mut best_value = i16::MIN as i32;
-        let mut best_move = None;
+        let mut best_move = move_buf[0];
         for mv in move_buf {
             let mut move_board = board.clone();
             move_board.play(mv);
@@ -125,7 +162,7 @@ impl Searcher {
 
             if cur_value > best_value {
                 best_value = cur_value;
-                best_move = Some(mv);
+                best_move = mv;
             }
 
             alpha = alpha.max(best_value);
@@ -135,7 +172,26 @@ impl Searcher {
             }
         }
 
-        (best_move, best_value)
+        let node_type = if best_value <= alpha_orig {
+            NodeType::UpperBound
+        } else if best_value >= beta {
+            NodeType::LowerBound
+        } else {
+            NodeType::Exact
+        };
+
+        self.tt.set(
+            board_hash,
+            TTEntry {
+                hash: board_hash,
+                best_move,
+                best_value,
+                depth,
+                node_type,
+            },
+        );
+
+        (Some(best_move), best_value)
     }
 
     pub fn qsearch(
