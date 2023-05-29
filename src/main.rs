@@ -1,17 +1,27 @@
-use std::{env, io::stdin, time::{Instant, Duration}, thread, sync::mpsc::{self, Sender}};
+use std::{
+    env,
+    io::stdin,
+    sync::mpsc::{self, Sender},
+    thread,
+    time::{Duration, Instant},
+};
 
-use cozy_chess::{Board, Move, Square, Color, Rank, File, Piece};
+use cozy_chess::{Board, Color};
 use cozy_uci::{
     command::UciCommand,
     remark::{UciIdInfo, UciRemark},
     UciFormatOptions, UciParseErrorKind,
 };
-use UciParseErrorKind::*;
 use search::Searcher;
-mod psqts;
+use utils::uci_to_kxr_move;
+use UciParseErrorKind::*;
+
+use crate::utils::kxr_to_uci_move;
 mod evaluate;
 mod move_ordering;
+mod psqts;
 mod search;
+mod utils;
 
 #[derive(Debug)]
 struct SearchTask {
@@ -38,37 +48,32 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(3);
+    let searcher = Searcher::new(3);
 
     let options = UciFormatOptions::default();
     loop {
         let task = match rx.recv() {
             Ok(r) => r,
-            Err(e) => {panic!("AAA {}", e);}
-        };
-        println!("{}", task.board);
-        let (ss, mut bm, _bv) = searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
-        task.board.generate_moves(|moves| {
-            for mv in moves {
-                println!("{:?}", mv);
+            Err(e) => {
+                panic!("AAA {}", e);
             }
-            false
-        });
+        };
+
+        let (ss, mut bm, _bv) =
+            searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
+
         println!("info nodes {}", ss.nodes_visited);
-        println!("{:?}", bm);
 
-        if task.board.piece_on(bm.from) == Some(Piece::King) && task.board.piece_on(bm.to) == Some(Piece::Rook) {
-            bm.to = match (bm.from, bm.to) {
-                (Square::E1, Square::H1) => Square::G1,
-                (Square::E8, Square::H8) => Square::G8,
-                (Square::E1, Square::A1) => Square::C1,
-                (Square::E8, Square::A8) => Square::C8,
-                _ => bm.to,
-            };
-        }
-        println!("{}", UciRemark::BestMove { mv: bm, ponder: None }.format(&options));
+        kxr_to_uci_move(&task.board, &mut bm);
+        println!(
+            "{}",
+            UciRemark::BestMove {
+                mv: bm,
+                ponder: None
+            }
+            .format(&options)
+        );
     }
-
 }
 
 fn uci_handler(tx: Sender<SearchTask>) {
@@ -89,41 +94,39 @@ fn uci_handler(tx: Sender<SearchTask>) {
 
                     println!(
                         "{:}",
-                        UciRemark::Id(UciIdInfo::Author("Aayush Sabharwal".to_owned())).format(&options)
+                        UciRemark::Id(UciIdInfo::Author("Aayush Sabharwal".to_owned()))
+                            .format(&options)
                     );
 
                     println!("{:}", UciRemark::UciOk.format(&options));
                 }
-                UciCommand::Debug(_) => {},
+                UciCommand::Debug(_) => {}
                 UciCommand::IsReady => println!("{:}", UciRemark::ReadyOk.format(&options)),
                 UciCommand::Position { init_pos, moves } => {
                     cur_board = Board::from(init_pos);
                     for mut mv in moves {
-                        if cur_board.piece_on(mv.from) == Some(Piece::King) && cur_board.piece_on(mv.to) != Some(Piece::Rook) {
-                            mv.to = match (mv.from, mv.to) {
-                                (Square::E1, Square::G1) => Square::H1,
-                                (Square::E8, Square::G8) => Square::H8,
-                                (Square::E1, Square::C1) => Square::A1,
-                                (Square::E8, Square::C8) => Square::A8,
-                                _ => mv.to,
-                            };
-                        }
+                        uci_to_kxr_move(&cur_board, &mut mv);
                         cur_board.play_unchecked(mv);
                     }
                 }
-                UciCommand::SetOption { name: _, value: _ } => {},
-                UciCommand::UciNewGame => {},
-                UciCommand::Stop => {},
-                UciCommand::PonderHit => {},
-                UciCommand::Quit => {},
+                UciCommand::SetOption { name: _, value: _ } => {}
+                UciCommand::UciNewGame => {}
+                UciCommand::Stop => {}
+                UciCommand::PonderHit => {}
+                UciCommand::Quit => {}
                 UciCommand::Go(opts) => {
-                    tx.send(SearchTask {board: cur_board.clone(), time_left: match cur_board.side_to_move() {
-                        Color::White => opts.wtime.unwrap(),
-                        Color::Black => opts.btime.unwrap(),
-                    }, time_inc: match cur_board.side_to_move() {
-                        Color::White => opts.winc.unwrap(),
-                        Color::Black => opts.binc.unwrap(),
-                    }}).unwrap();
+                    tx.send(SearchTask {
+                        board: cur_board.clone(),
+                        time_left: match cur_board.side_to_move() {
+                            Color::White => opts.wtime.unwrap(),
+                            Color::Black => opts.btime.unwrap(),
+                        },
+                        time_inc: match cur_board.side_to_move() {
+                            Color::White => opts.winc.unwrap(),
+                            Color::Black => opts.binc.unwrap(),
+                        },
+                    })
+                    .unwrap();
                 }
             },
             Err(err) => {
@@ -137,10 +140,10 @@ fn uci_handler(tx: Sender<SearchTask>) {
 }
 
 fn run_benchmark() {
-    let mut searcher: Searcher = Searcher::new(5);
+    let searcher: Searcher = Searcher::new(5);
     let mut total_nodes = 0;
     let mut total_time = 0;
-    for (i, fen) in include_str!("fen.csv").split("\n").take(50).enumerate() {
+    for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
         let board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
         let (stats, bm, bv) = searcher.search(&board, Duration::from_secs(10));
@@ -172,7 +175,6 @@ fn hyperfine() {
         .unwrap();
     // println!("{board}");
     for i in 1..=5 {
-
-    dbg!(Searcher::new(i).search(&board, Duration::from_secs(10)));
+        dbg!(Searcher::new(i).search(&board, Duration::from_secs(10)));
     }
 }

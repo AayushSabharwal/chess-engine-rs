@@ -3,7 +3,10 @@ use std::time::{Duration, Instant};
 use arrayvec::ArrayVec;
 use cozy_chess::{Board, GameStatus, Move, Piece};
 
-use crate::{evaluate::{self, PIECE_VALUES}, move_ordering::CaptureMovesIterator};
+use crate::{
+    evaluate::{self, PIECE_VALUES},
+    move_ordering::CaptureMovesIterator,
+};
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -52,7 +55,15 @@ impl Searcher {
         let mut stats = SearchStats::new();
         let timer = TimeControl::new(move_time);
         for i in 1..=self.max_depth {
-            let (mv, val) = self.search_internal(board, i, i16::MIN as i32, i16::MAX as i32, 1, &timer, &mut stats);
+            let (mv, val) = self.search_internal(
+                board,
+                i,
+                i16::MIN as i32,
+                i16::MAX as i32,
+                1,
+                &timer,
+                &mut stats,
+            );
 
             if timer.time_up() {
                 break;
@@ -124,7 +135,14 @@ impl Searcher {
         (best_move, best_value)
     }
 
-    pub fn qsearch(&self, board: &Board, mut alpha: i32, beta: i32, timer: &TimeControl, stats: &mut SearchStats) -> i32 {
+    pub fn qsearch(
+        &self,
+        board: &Board,
+        mut alpha: i32,
+        beta: i32,
+        timer: &TimeControl,
+        stats: &mut SearchStats,
+    ) -> i32 {
         stats.nodes_visited += 1;
         let stand_pat = evaluate::evaluate(board);
         if stats.nodes_visited % 1024 == 0 && timer.time_up() {

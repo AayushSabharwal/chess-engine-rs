@@ -17,7 +17,13 @@ impl CaptureMovesIterator {
             moves.to &= enemy;
             let src_eval = PIECE_VALUES[board.piece_on(moves.from).unwrap() as usize] as u16;
             for mv in moves {
-                moves_evals.push((mv, (PIECE_VALUES[board.piece_on(mv.to).unwrap() as usize] as u16, src_eval)));
+                moves_evals.push((
+                    mv,
+                    (
+                        PIECE_VALUES[board.piece_on(mv.to).unwrap() as usize] as u16,
+                        src_eval,
+                    ),
+                ));
             }
             false
         });
@@ -39,7 +45,7 @@ impl Iterator for CaptureMovesIterator {
 
         let mut best_idx = self.cur;
         let mut best_eval = (0, 0);
-        for i in self.cur+1..self.moves_evals.len() {
+        for i in self.cur + 1..self.moves_evals.len() {
             if self.moves_evals[i].1 > best_eval {
                 best_eval = self.moves_evals[i].1;
                 best_idx = i;
