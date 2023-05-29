@@ -47,7 +47,7 @@ fn main() {
             Err(e) => {panic!("AAA {}", e);}
         };
         println!("{}", task.board);
-        let (ss, bm, _bv) = searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
+        let (ss, mut bm, _bv) = searcher.search(&task.board, task.time_left / 40 + task.time_inc / 10);
         task.board.generate_moves(|moves| {
             for mv in moves {
                 println!("{:?}", mv);
@@ -56,6 +56,16 @@ fn main() {
         });
         println!("info nodes {}", ss.nodes_visited);
         println!("{:?}", bm);
+
+        if task.board.piece_on(bm.from) == Some(Piece::King) && task.board.piece_on(bm.to) == Some(Piece::Rook) {
+            bm.to = match (bm.from, bm.to) {
+                (Square::E1, Square::H1) => Square::G1,
+                (Square::E8, Square::H8) => Square::G8,
+                (Square::E1, Square::A1) => Square::C1,
+                (Square::E8, Square::A8) => Square::C8,
+                _ => bm.to,
+            };
+        }
         println!("{}", UciRemark::BestMove { mv: bm, ponder: None }.format(&options));
     }
 
@@ -141,15 +151,6 @@ fn run_benchmark() {
         println!(
             "Position [{i:02}]: Move {:} Value {bv:8} | {:10} Nodes in {:6.3}s at {:10.2} KNPS",
             bm,
-            // if bm.is_none() {
-            //     Move {
-            //         from: Square::A1,
-            //         to: Square::A1,
-            //         promotion: None,
-            //     }
-            // } else {
-            //     bm.unwrap()
-            // },
             stats.nodes_visited,
             duration.as_micros() as f64 / 1e6,
             stats.nodes_visited as f64 / duration.as_micros() as f64 * 1e3
