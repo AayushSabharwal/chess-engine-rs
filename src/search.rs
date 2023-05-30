@@ -46,6 +46,7 @@ pub struct Searcher {
     max_depth: usize,
     tt: TranspositionTable,
     stop_search: bool,
+    board_history: ArrayVec<u64, 100>,
 }
 
 impl Searcher {
@@ -54,6 +55,7 @@ impl Searcher {
             max_depth,
             tt: TranspositionTable::new(tt_size),
             stop_search: false,
+            board_history: ArrayVec::new(),
         }
     }
 
@@ -106,6 +108,18 @@ impl Searcher {
         let alpha_orig = alpha;
 
         let board_hash = board.hash();
+
+        let mut repeat_count = 0;
+        for &hash in self.board_history.iter().rev() {
+            if hash == board_hash {
+                repeat_count += 1;
+            }
+
+            if repeat_count >= 2 {
+                return (None, 0);
+            }
+        }
+
         let tt_res = self.tt.get(board_hash);
         let mut tt_move = Move {
             from: Square::A1,
@@ -141,23 +155,11 @@ impl Searcher {
             return (None, evaluate::evaluate(board));
         }
 
-        // let mut move_buf = ArrayVec::<Move, 218>::new();
-        // board.generate_moves(|moves| {
-        //     for mv in moves {
-        //         move_buf.push(mv);
-
-        //         if mv == tt_move {
-        //             let idx = move_buf.len() - 1;
-        //             move_buf.swap(0, idx);
-        //         }
-        //     }
-        //     false
-        // });
-
         let it = MovesIterator::with_all_moves(board, tt_move);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move { from: Square::A1, to: Square::A1, promotion: None };
-        // for mv in move_buf {
+        self.board_history.push(board_hash);
+
         for (mv, _iscap) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
@@ -177,6 +179,8 @@ impl Searcher {
                 break;
             }
         }
+
+        self.board_history.pop();
 
         let node_type = if best_value <= alpha_orig {
             NodeType::UpperBound
