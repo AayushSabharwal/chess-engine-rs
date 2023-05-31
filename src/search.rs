@@ -194,7 +194,7 @@ impl Searcher {
         }
 
         if depth == 0 {
-            return evaluate::evaluate(board);
+            return self.qsearch(board, alpha, beta, timer, stats);
         }
 
         let it = MovesIterator::with_all_moves(board, tt_move);
@@ -270,11 +270,11 @@ impl Searcher {
         stats: &mut SearchStats,
     ) -> i32 {
         stats.nodes_visited += 1;
-        let stand_pat = evaluate::evaluate(board);
         if stats.nodes_visited % 1024 == 0 && timer.time_up() {
-            return stand_pat;
+            return 0;
         }
 
+        let stand_pat = evaluate::evaluate(board);
         if stand_pat >= beta {
             return beta;
         }
