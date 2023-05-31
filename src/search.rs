@@ -6,7 +6,8 @@ use cozy_chess::{Board, GameStatus, Move, Piece, Square};
 use crate::{
     evaluate::{self, PIECE_VALUES},
     move_ordering::MovesIterator,
-    transposition_table::{NodeType, TTEntry, TranspositionTable}, utils::NULL_MOVE,
+    transposition_table::{NodeType, TTEntry, TranspositionTable},
+    utils::NULL_MOVE,
 };
 
 pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
@@ -157,11 +158,8 @@ impl Searcher {
         }
 
         let tt_res = self.tt.get(board_hash);
-        let mut tt_move = Move {
-            from: Square::A1,
-            to: Square::A1,
-            promotion: None,
-        };
+        let mut tt_move = NULL_MOVE;
+
         if let Some(tte) = tt_res {
             if tte.depth >= depth {
                 match tte.node_type {
@@ -212,17 +210,16 @@ impl Searcher {
             let mut move_board = board.clone();
             move_board.play(mv);
 
-            let cur_value = -self
-                .search_internal(
-                    &move_board,
-                    status,
-                    depth - 1,
-                    ply + 1,
-                    -beta,
-                    -alpha,
-                    timer,
-                    stats,
-                );
+            let cur_value = -self.search_internal(
+                &move_board,
+                status,
+                depth - 1,
+                ply + 1,
+                -beta,
+                -alpha,
+                timer,
+                stats,
+            );
 
             if cur_value > best_value {
                 best_value = cur_value;
@@ -282,16 +279,6 @@ impl Searcher {
             return beta;
         }
         alpha = alpha.max(stand_pat);
-
-        // let mut move_buf = ArrayVec::<Move, 218>::new();
-        // let enemy = board.colors(!board.side_to_move());
-        // board.generate_moves(|mut moves| {
-        //     moves.to &= enemy;
-        //     for mv in moves {
-        //         move_buf.push(mv);
-        //     }
-        //     false
-        // });
 
         let move_buf = MovesIterator::with_capture_moves(board);
         for (mv, _) in move_buf {
@@ -358,7 +345,8 @@ mod test {
     #[test]
     fn force_repetition() {
         let board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
-        let (_, bm, bv) = Searcher::new(100, 100000).search(&board, ArrayVec::new(), Duration::from_secs(10));
+        let (_, bm, bv) =
+            Searcher::new(100, 100000).search(&board, ArrayVec::new(), Duration::from_secs(10));
         assert!(bm == "g4h4".parse::<Move>().unwrap() || bm == "g4c8".parse::<Move>().unwrap());
         assert_eq!(bv, 0);
     }
