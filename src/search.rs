@@ -194,7 +194,7 @@ impl Searcher {
         }
 
         if depth == 0 {
-            return self.qsearch(board, alpha, beta, timer, stats);
+            return evaluate::evaluate(board);
         }
 
         let it = MovesIterator::with_all_moves(board, tt_move);

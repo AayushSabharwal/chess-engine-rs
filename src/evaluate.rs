@@ -7,7 +7,6 @@ pub const PIECE_VALUES: [i32; 6] = [100, 250, 300, 500, 900, 10000];
 pub fn evaluate(board: &Board) -> i32 {
     let cur_side = board.side_to_move();
     let oth_side = !cur_side;
-    let mut eval = 0;
     let mut eg = [0; 2];
     let mut mg = [0; 2];
     let mut game_phase = 0;
@@ -19,11 +18,6 @@ pub fn evaluate(board: &Board) -> i32 {
         }
         let ptype = board.piece_on(i).unwrap();
         let pcol = board.color_on(i).unwrap();
-        eval += if pcol == cur_side {
-            PIECE_VALUES[ptype as usize]
-        } else {
-            -PIECE_VALUES[ptype as usize]
-        };
 
         let mut tb_idx = i as usize;
         if pcol == Color::White {
@@ -40,7 +34,5 @@ pub fn evaluate(board: &Board) -> i32 {
     let eg_eval = eg[cur_side as usize] - eg[oth_side as usize];
     let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
-    eval += (mg_eval * mg_phase + eg_eval * eg_phase) / 24;
-
-    eval
+    (mg_eval * mg_phase + eg_eval * eg_phase) / 24
 }
