@@ -7,7 +7,7 @@ pub struct MovesIterator {
 }
 
 impl MovesIterator {
-    pub fn with_all_moves(board: &Board, tt_move: Move) -> Self {
+    pub fn with_all_moves(board: &Board, tt_move: Move, killer: Option<Move>) -> Self {
         let mut moves_evals = ArrayVec::new();
 
         let enemy = board.colors(!board.side_to_move());
@@ -23,6 +23,12 @@ impl MovesIterator {
                         true,
                     ));
                 } else {
+                    if let Some(kmv) = killer {
+                        if kmv == mv {
+                            moves_evals.push((mv, 5, false));
+                            continue;
+                        }
+                    }
                     moves_evals.push((mv, 0, false));
                 }
             }

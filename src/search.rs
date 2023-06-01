@@ -85,6 +85,7 @@ impl SearchStatus {
 pub struct Searcher {
     max_depth: usize,
     pub tt: TranspositionTable,
+    killers: [Option<Move>; 128],
 }
 
 impl Searcher {
@@ -92,6 +93,7 @@ impl Searcher {
         Self {
             max_depth,
             tt: TranspositionTable::new(tt_size),
+            killers: [None; 128],
         }
     }
 
@@ -108,6 +110,7 @@ impl Searcher {
         let timer = TimeControl::new(move_time);
         let mut status = SearchStatus::new(board_history);
 
+        self.killers.fill(None);
         for i in 1..=self.max_depth {
             let val = self.search_internal(
                 board,
@@ -197,7 +200,7 @@ impl Searcher {
             return self.qsearch(board, alpha, beta, timer, stats);
         }
 
-        let it = MovesIterator::with_all_moves(board, tt_move);
+        let it = MovesIterator::with_all_moves(board, tt_move, self.killers[depth]);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move {
             from: Square::A1,
@@ -206,7 +209,7 @@ impl Searcher {
         };
         status.board_history.push(board_hash);
 
-        for (mv, _iscap) in it {
+        for (mv, iscapture) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
 
@@ -229,6 +232,10 @@ impl Searcher {
             alpha = alpha.max(best_value);
 
             if alpha >= beta {
+                if !iscapture {
+                    self.killers[depth] = Some(mv);
+                }
+
                 break;
             }
         }
