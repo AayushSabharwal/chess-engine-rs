@@ -84,7 +84,7 @@ impl SearchStatus {
 #[derive(Debug)]
 pub struct Searcher {
     max_depth: usize,
-    tt: TranspositionTable,
+    pub tt: TranspositionTable,
 }
 
 impl Searcher {
@@ -170,10 +170,10 @@ impl Searcher {
                         return tte.best_value;
                     }
                     NodeType::LowerBound => {
-                        beta = beta.min(tte.best_value);
+                        alpha = alpha.max(tte.best_value);
                     }
                     NodeType::UpperBound => {
-                        alpha = alpha.max(tte.best_value);
+                        beta = beta.min(tte.best_value);
                     }
                 }
                 if alpha >= beta {
@@ -194,7 +194,7 @@ impl Searcher {
         }
 
         if depth == 0 {
-            return evaluate::evaluate(board);
+            return self.qsearch(board, alpha, beta, timer, stats);
         }
 
         let it = MovesIterator::with_all_moves(board, tt_move);

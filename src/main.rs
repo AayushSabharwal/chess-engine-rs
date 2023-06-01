@@ -1,6 +1,7 @@
 use std::{
     env,
     io::stdin,
+    mem::size_of,
     sync::mpsc::{self, Sender},
     thread,
     time::{Duration, Instant},
@@ -14,6 +15,7 @@ use cozy_uci::{
     UciFormatOptions, UciParseErrorKind,
 };
 use search::Searcher;
+use transposition_table::TTEntry;
 use utils::uci_to_kxr_move;
 use UciParseErrorKind::*;
 
@@ -26,11 +28,15 @@ mod transposition_table;
 mod utils;
 
 #[derive(Debug)]
-struct SearchTask {
-    pub board: Board,
-    pub board_history: ArrayVec<u64, 128>,
-    pub time_left: Duration,
-    pub time_inc: Duration,
+enum ThreadMessage {
+    SearchTask {
+        board: Board,
+        board_history: ArrayVec<u64, 128>,
+        time_left: Duration,
+        time_inc: Duration,
+    },
+    NewGame,
+    ResizeHashTable(usize),
 }
 
 fn main() {
@@ -45,7 +51,7 @@ fn main() {
         return;
     }
 
-    let (tx, rx) = mpsc::channel::<SearchTask>();
+    let (tx, rx) = mpsc::channel::<ThreadMessage>();
 
     let _handler = thread::spawn(move || {
         uci_handler(tx);
@@ -55,31 +61,46 @@ fn main() {
 
     let options = UciFormatOptions::default();
     loop {
-        let mut task = match rx.recv() {
+        let task = match rx.recv() {
             Ok(r) => r,
             Err(e) => {
                 panic!("AAA {}", e);
             }
         };
 
-        let (ss, mut bm, _bv) =
-            searcher.search(&mut task.board, task.board_history, task.time_left / 20 + task.time_inc / 2);
+        match task {
+            ThreadMessage::SearchTask {
+                mut board,
+                board_history,
+                time_left,
+                time_inc,
+            } => {
+                let (ss, mut bm, _bv) =
+                    searcher.search(&mut board, board_history, time_left / 20 + time_inc / 2);
 
-        println!("info nodes {}", ss.nodes_visited);
+                println!("info nodes {}", ss.nodes_visited);
 
-        kxr_to_uci_move(&task.board, &mut bm);
-        println!(
-            "{}",
-            UciRemark::BestMove {
-                mv: bm,
-                ponder: None
+                kxr_to_uci_move(&board, &mut bm);
+                println!(
+                    "{}",
+                    UciRemark::BestMove {
+                        mv: bm,
+                        ponder: None
+                    }
+                    .format(&options)
+                );
             }
-            .format(&options)
-        );
+            ThreadMessage::NewGame => {
+                searcher.tt.clear();
+            }
+            ThreadMessage::ResizeHashTable(bytes) => {
+                searcher.tt.resize(bytes / size_of::<TTEntry>());
+            }
+        }
     }
 }
 
-fn uci_handler(tx: Sender<SearchTask>) {
+fn uci_handler(tx: Sender<ThreadMessage>) {
     let options = UciFormatOptions::default();
     let mut cur_board = Board::startpos();
     let mut board_history = ArrayVec::new();
@@ -106,7 +127,10 @@ fn uci_handler(tx: Sender<SearchTask>) {
                 }
                 UciCommand::Debug(_) => {}
                 UciCommand::IsReady => println!("{:}", UciRemark::ReadyOk.format(&options)),
-                UciCommand::Position { init_pos, moves: mvs } => {
+                UciCommand::Position {
+                    init_pos,
+                    moves: mvs,
+                } => {
                     cur_board = Board::from(init_pos);
 
                     board_history.clear();
@@ -125,12 +149,14 @@ fn uci_handler(tx: Sender<SearchTask>) {
                     }
                 }
                 UciCommand::SetOption { name: _, value: _ } => {}
-                UciCommand::UciNewGame => {}
+                UciCommand::UciNewGame => {
+                    tx.send(ThreadMessage::NewGame).unwrap();
+                }
                 UciCommand::Stop => {}
                 UciCommand::PonderHit => {}
                 UciCommand::Quit => {}
                 UciCommand::Go(opts) => {
-                    tx.send(SearchTask {
+                    tx.send(ThreadMessage::SearchTask {
                         board: cur_board.clone(),
                         board_history: board_history.clone(),
                         time_left: match cur_board.side_to_move() {
@@ -160,6 +186,7 @@ fn run_benchmark() {
     let mut total_nodes = 0;
     let mut total_time = 0;
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
+        searcher.tt.clear();
         let mut board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
         let (stats, bm, bv) = searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
@@ -196,9 +223,9 @@ fn hyperfine() {
 
 #[cfg(test)]
 mod test {
-    use std::{fs, time::Duration};
     use arrayvec::ArrayVec;
     use cozy_chess::{Board, GameStatus};
+    use std::{fs, time::Duration};
 
     use crate::search::{Searcher, MATE_VALUE};
 
@@ -207,7 +234,8 @@ mod test {
         let mut searcher = Searcher::new(ply, 100000);
         for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
             let mut board = Board::from_fen(fen, false).unwrap();
-            let (_, mut bm, bv) = searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
+            let (_, mut bm, bv) =
+                searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
             board.play(bm);
             assert!(bv > MATE_VALUE - 100);
             for _ in 1..ply {

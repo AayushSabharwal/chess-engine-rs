@@ -49,4 +49,10 @@ impl TranspositionTable {
     pub fn resize(&mut self, size: usize) {
         self.buffer = vec![None; size];
     }
+
+    pub fn clear(&mut self) {
+        for i in 0..self.buffer.len() {
+            self.buffer[i] = None;
+        }
+    }
 }

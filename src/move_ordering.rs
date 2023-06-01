@@ -78,6 +78,9 @@ impl Iterator for MovesIterator {
 
         self.moves_evals.swap(self.cur, best_idx);
         self.cur += 1;
-        Some((self.moves_evals[self.cur - 1].0, self.moves_evals[self.cur - 1].2))
+        Some((
+            self.moves_evals[self.cur - 1].0,
+            self.moves_evals[self.cur - 1].2,
+        ))
     }
 }

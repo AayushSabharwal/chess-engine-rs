@@ -1,6 +1,10 @@
 use cozy_chess::{Board, Move, Piece, Square};
 
-pub const NULL_MOVE: Move = Move { from: Square::A1, to: Square::A1, promotion: None };
+pub const NULL_MOVE: Move = Move {
+    from: Square::A1,
+    to: Square::A1,
+    promotion: None,
+};
 
 pub fn uci_to_kxr_move(board: &Board, mv: &mut Move) {
     if board.piece_on(mv.from) == Some(Piece::King) && board.piece_on(mv.to) != Some(Piece::Rook) {
