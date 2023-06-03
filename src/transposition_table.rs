@@ -30,24 +30,12 @@ impl TranspositionTable {
 
     pub fn get(&self, hash: u64) -> Option<TTEntry> {
         let idx = hash as usize % self.buffer.len();
-        if let Some(tte) = self.buffer[idx] {
-            if tte.hash == hash {
-                Some(tte)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        self.buffer[idx].filter(|&tte| tte.hash == hash)
     }
 
     pub fn set(&mut self, hash: u64, value: TTEntry) {
         let idx = hash as usize % self.buffer.len();
         self.buffer[idx] = Some(value);
-    }
-
-    pub fn resize(&mut self, size: usize) {
-        self.buffer = vec![None; size];
     }
 
     pub fn clear(&mut self) {

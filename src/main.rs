@@ -1,13 +1,11 @@
 use std::{
     env,
     io::stdin,
-    mem::size_of,
     sync::mpsc::{self, Sender},
     thread,
     time::{Duration, Instant},
 };
 
-use arrayvec::ArrayVec;
 use cozy_chess::{Board, Color};
 use cozy_uci::{
     command::UciCommand,
@@ -15,11 +13,10 @@ use cozy_uci::{
     UciFormatOptions, UciParseErrorKind,
 };
 use search::Searcher;
-use transposition_table::TTEntry;
 use utils::uci_to_kxr_move;
 use UciParseErrorKind::*;
 
-use crate::utils::kxr_to_uci_move;
+use crate::{search::SearchStatus, utils::kxr_to_uci_move};
 mod evaluate;
 mod move_ordering;
 mod psqts;
@@ -31,12 +28,11 @@ mod utils;
 enum ThreadMessage {
     SearchTask {
         board: Board,
-        board_history: ArrayVec<u64, 128>,
+        board_history: Vec<u64>,
         time_left: Duration,
         time_inc: Duration,
     },
     NewGame,
-    ResizeHashTable(usize),
 }
 
 fn main() {
@@ -70,15 +66,16 @@ fn main() {
 
         match task {
             ThreadMessage::SearchTask {
-                mut board,
+                board,
                 board_history,
                 time_left,
                 time_inc,
             } => {
-                let (ss, mut bm, _bv) =
-                    searcher.search(&mut board, board_history, time_left / 20 + time_inc / 2);
+                let mut status = SearchStatus::new(board_history);
+                let (mut bm, _bv) =
+                    searcher.search(&board, &mut status, time_left / 20 + time_inc / 2);
 
-                println!("info nodes {}", ss.nodes_visited);
+                println!("info nodes {}", status.nodes_visited);
 
                 kxr_to_uci_move(&board, &mut bm);
                 println!(
@@ -93,9 +90,6 @@ fn main() {
             ThreadMessage::NewGame => {
                 searcher.tt.clear();
             }
-            ThreadMessage::ResizeHashTable(bytes) => {
-                searcher.tt.resize(bytes / size_of::<TTEntry>());
-            }
         }
     }
 }
@@ -103,7 +97,7 @@ fn main() {
 fn uci_handler(tx: Sender<ThreadMessage>) {
     let options = UciFormatOptions::default();
     let mut cur_board = Board::startpos();
-    let mut board_history = ArrayVec::new();
+    let mut board_history = Vec::new();
 
     loop {
         let mut line = String::new();
@@ -187,19 +181,20 @@ fn run_benchmark() {
     let mut total_time = 0;
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
         searcher.tt.clear();
-        let mut board = fen.parse::<Board>().unwrap();
+        let board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
-        let (stats, bm, bv) = searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
+        let mut status = SearchStatus::new(std::iter::empty());
+        let (bm, bv) = searcher.search_fixed_depth(&board, &mut status, 7);
         let duration = start.elapsed();
-        total_nodes += stats.nodes_visited;
+        total_nodes += status.nodes_visited;
         total_time += duration.as_micros();
 
         println!(
             "Position [{i:02}]: Move {:} Value {bv:8} | {:10} Nodes in {:6.3}s at {:10.2} KNPS",
             bm,
-            stats.nodes_visited,
+            status.nodes_visited,
             duration.as_micros() as f64 / 1e6,
-            stats.nodes_visited as f64 / duration.as_micros() as f64 * 1e3
+            status.nodes_visited as f64 / duration.as_micros() as f64 * 1e3
         );
     }
 
@@ -213,33 +208,43 @@ fn run_benchmark() {
 
 fn hyperfine() {
     // let board = "r1br1nk1/ppq1bpp1/4p2p/8/4N2P/P3P3/1PQBBPP1/2R1K2R b K - 0 17"
-    let mut board = "r5rk/pp1np1bn/2pp2q1/3P1bN1/2P1N2Q/1P6/PB2PPBP/3R1RK1 w - - 0 1"
+    let board = "r5rk/pp1np1bn/2pp2q1/3P1bN1/2P1N2Q/1P6/PB2PPBP/3R1RK1 w - - 0 1"
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
     //
-    dbg!(Searcher::new(5, 100000).search(&mut board, ArrayVec::new(), Duration::from_secs(10)));
+    dbg!(Searcher::new(5, 100000).search(
+        &board,
+        &mut SearchStatus::new(std::iter::empty()),
+        Duration::from_secs(10)
+    ));
 }
 
 #[cfg(test)]
 mod test {
-    use arrayvec::ArrayVec;
     use cozy_chess::{Board, GameStatus};
     use std::{fs, time::Duration};
 
-    use crate::search::{Searcher, MATE_VALUE};
+    use crate::search::{SearchStatus, Searcher, MATE_VALUE};
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;
         let mut searcher = Searcher::new(ply, 100000);
         for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
             let mut board = Board::from_fen(fen, false).unwrap();
-            let (_, mut bm, bv) =
-                searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
+            let (mut bm, bv) = searcher.search(
+                &board,
+                &mut SearchStatus::new(std::iter::empty()),
+                Duration::from_secs(10),
+            );
             board.play(bm);
             assert!(bv > MATE_VALUE - 100);
             for _ in 1..ply {
-                (_, bm, _) = searcher.search(&mut board, ArrayVec::new(), Duration::from_secs(10));
+                (bm, _) = searcher.search(
+                    &board,
+                    &mut SearchStatus::new(std::iter::empty()),
+                    Duration::from_secs(10),
+                );
                 board.play(bm);
             }
             assert_eq!(board.status(), GameStatus::Won);

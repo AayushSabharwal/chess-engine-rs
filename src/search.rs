@@ -1,7 +1,6 @@
-use std::time::{Duration, Instant};
-
-use arrayvec::ArrayVec;
 use cozy_chess::{Board, GameStatus, Move, Piece, Square};
+
+use std::time::{Duration, Instant};
 
 use crate::{
     evaluate::{self, PIECE_VALUES},
@@ -32,28 +31,30 @@ impl TimeControl {
 }
 
 #[derive(Debug)]
-pub struct SearchStats {
-    pub nodes_visited: usize,
-}
-
-impl SearchStats {
-    pub fn new() -> Self {
-        Self { nodes_visited: 0 }
-    }
-}
-
-struct SearchStatus {
+pub struct SearchStatus {
     stop_search: bool,
-    board_history: ArrayVec<u64, 128>,
+    board_history: Vec<u64>,
     best_move: Move,
+    pub nodes_visited: usize,
+    ply: i32,
 }
 
 impl SearchStatus {
-    fn new(board_history: ArrayVec<u64, 128>) -> Self {
+    pub fn new<T>(history: T) -> Self
+    where
+        T: IntoIterator<Item = u64>,
+    {
+        let mut board_history = Vec::new();
+        board_history.reserve(512);
+        for i in history {
+            board_history.push(i);
+        }
         Self {
             stop_search: false,
             board_history,
             best_move: NULL_MOVE,
+            nodes_visited: 0,
+            ply: 0,
         }
     }
 
@@ -77,7 +78,17 @@ impl SearchStatus {
                 }
             }
         }
-        return false;
+        false
+    }
+
+    fn push_board_hash(&mut self, board_hash: u64) {
+        self.board_history.push(board_hash);
+        self.ply += 1;
+    }
+
+    fn pop_board_hash(&mut self) {
+        self.board_history.pop();
+        self.ply -= 1;
     }
 }
 
@@ -100,28 +111,18 @@ impl Searcher {
     pub fn search(
         &mut self,
         board: &Board,
-        board_history: ArrayVec<u64, 128>,
+        status: &mut SearchStatus,
         move_time: Duration,
-    ) -> (SearchStats, Move, i32) {
+    ) -> (Move, i32) {
         let mut best_move = NULL_MOVE;
         let mut best_value = 0;
 
-        let mut stats = SearchStats::new();
         let timer = TimeControl::new(move_time);
-        let mut status = SearchStatus::new(board_history);
 
         self.killers.fill(None);
         for i in 1..=self.max_depth {
-            let val = self.search_internal(
-                board,
-                &mut status,
-                i,
-                0,
-                i16::MIN as i32,
-                i16::MAX as i32,
-                &timer,
-                &mut stats,
-            );
+            let val =
+                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer);
 
             if status.stop_search || timer.time_up() {
                 break;
@@ -131,7 +132,34 @@ impl Searcher {
             best_value = val;
         }
 
-        (stats, best_move, best_value)
+        (best_move, best_value)
+    }
+
+    pub fn search_fixed_depth(
+        &mut self,
+        board: &Board,
+        status: &mut SearchStatus,
+        depth: usize,
+    ) -> (Move, i32) {
+        let mut best_move = NULL_MOVE;
+        let mut best_value = 0;
+
+        let timer = TimeControl::new(Duration::from_secs(10));
+
+        self.killers.fill(None);
+        for i in 1..=depth {
+            let val =
+                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer);
+
+            if status.stop_search || timer.time_up() {
+                break;
+            }
+
+            best_move = status.best_move;
+            best_value = val;
+        }
+
+        (best_move, best_value)
     }
 
     fn search_internal(
@@ -139,15 +167,13 @@ impl Searcher {
         board: &Board,
         status: &mut SearchStatus,
         depth: usize,
-        ply: i32,
         mut alpha: i32,
         mut beta: i32,
         timer: &TimeControl,
-        stats: &mut SearchStats,
     ) -> i32 {
-        stats.nodes_visited += 1;
+        status.nodes_visited += 1;
 
-        if status.stop_search || stats.nodes_visited % 1024 == 0 && timer.time_up() {
+        if status.stop_search || status.nodes_visited % 1024 == 0 && timer.time_up() {
             status.stop_search = true;
             return 0;
         }
@@ -167,7 +193,7 @@ impl Searcher {
             if tte.depth >= depth {
                 match tte.node_type {
                     NodeType::Exact => {
-                        if ply == 0 {
+                        if status.ply == 0 {
                             status.best_move = tte.best_move;
                         }
                         return tte.best_value;
@@ -180,7 +206,7 @@ impl Searcher {
                     }
                 }
                 if alpha >= beta {
-                    if ply == 0 {
+                    if status.ply == 0 {
                         status.best_move = tte.best_move;
                     }
                     return tte.best_value;
@@ -191,13 +217,13 @@ impl Searcher {
         }
 
         if board.status() == GameStatus::Won {
-            return -(MATE_VALUE - ply);
+            return -(MATE_VALUE - status.ply);
         } else if board.status() == GameStatus::Drawn {
             return 0;
         }
 
         if depth == 0 {
-            return self.qsearch(board, alpha, beta, timer, stats);
+            return qsearch(board, alpha, beta, timer, status);
         }
 
         let it = MovesIterator::with_all_moves(board, tt_move, self.killers[depth]);
@@ -207,22 +233,14 @@ impl Searcher {
             to: Square::A1,
             promotion: None,
         };
-        status.board_history.push(board_hash);
+        status.push_board_hash(board_hash);
 
         for (mv, iscapture) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
 
-            let cur_value = -self.search_internal(
-                &move_board,
-                status,
-                depth - 1,
-                ply + 1,
-                -beta,
-                -alpha,
-                timer,
-                stats,
-            );
+            let cur_value =
+                -self.search_internal(&move_board, status, depth - 1, -beta, -alpha, timer);
 
             if cur_value > best_value {
                 best_value = cur_value;
@@ -240,7 +258,7 @@ impl Searcher {
             }
         }
 
-        status.board_history.pop();
+        status.pop_board_hash();
 
         let node_type = if best_value <= alpha_orig {
             NodeType::UpperBound
@@ -261,47 +279,46 @@ impl Searcher {
             },
         );
 
-        if ply == 0 {
+        if status.ply == 0 {
             status.best_move = best_move;
         }
 
         best_value
     }
+}
 
-    pub fn qsearch(
-        &self,
-        board: &Board,
-        mut alpha: i32,
-        beta: i32,
-        timer: &TimeControl,
-        stats: &mut SearchStats,
-    ) -> i32 {
-        stats.nodes_visited += 1;
-        if stats.nodes_visited % 1024 == 0 && timer.time_up() {
-            return 0;
-        }
+fn qsearch(
+    board: &Board,
+    mut alpha: i32,
+    beta: i32,
+    timer: &TimeControl,
+    status: &mut SearchStatus,
+) -> i32 {
+    status.nodes_visited += 1;
+    if status.nodes_visited % 1024 == 0 && timer.time_up() {
+        return 0;
+    }
 
-        let stand_pat = evaluate::evaluate(board);
-        if stand_pat >= beta {
+    let stand_pat = evaluate::evaluate(board);
+    if stand_pat >= beta {
+        return beta;
+    }
+    alpha = alpha.max(stand_pat);
+
+    let move_buf = MovesIterator::with_capture_moves(board);
+    for (mv, _) in move_buf {
+        let mut move_board = board.clone();
+        move_board.play(mv);
+
+        let cur_value = -qsearch(&move_board, -beta, -alpha, timer, status);
+
+        alpha = alpha.max(cur_value);
+        if alpha >= beta {
             return beta;
         }
-        alpha = alpha.max(stand_pat);
-
-        let move_buf = MovesIterator::with_capture_moves(board);
-        for (mv, _) in move_buf {
-            let mut move_board = board.clone();
-            move_board.play(mv);
-
-            let cur_value = -self.qsearch(&move_board, -beta, -alpha, timer, stats);
-
-            alpha = alpha.max(cur_value);
-            if alpha >= beta {
-                return beta;
-            }
-        }
-
-        alpha
     }
+
+    alpha
 }
 
 #[cfg(test)]
@@ -311,7 +328,7 @@ mod test {
     use arrayvec::ArrayVec;
     use cozy_chess::{Board, Move};
 
-    use crate::search::{SearchStats, TimeControl};
+    use crate::search::TimeControl;
 
     use super::{SearchStatus, Searcher};
 
@@ -322,7 +339,7 @@ mod test {
             false,
         )
         .unwrap();
-        let mut board_history = ArrayVec::new();
+        let mut board_history: ArrayVec<u64, 128> = ArrayVec::new();
         board_history.push(board.hash());
         let moves = [
             "h1g1", "h8g8", "g1h1", "g8h8", "h1g1", "h8g8", "g1h1", "g8h8",
@@ -340,11 +357,9 @@ mod test {
             &board,
             &mut status,
             100,
-            0,
             i32::MIN,
             i32::MAX,
             &timer,
-            &mut SearchStats::new(),
         );
         assert_eq!(bv, 0);
     }
@@ -352,8 +367,11 @@ mod test {
     #[test]
     fn force_repetition() {
         let board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
-        let (_, bm, bv) =
-            Searcher::new(100, 100000).search(&board, ArrayVec::new(), Duration::from_secs(10));
+        let (bm, bv) = Searcher::new(100, 100000).search(
+            &board,
+            &mut SearchStatus::new(std::iter::empty()),
+            Duration::from_secs(10),
+        );
         assert!(bm == "g4h4".parse::<Move>().unwrap() || bm == "g4c8".parse::<Move>().unwrap());
         assert_eq!(bv, 0);
     }
