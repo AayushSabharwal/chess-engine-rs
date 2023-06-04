@@ -132,11 +132,11 @@ impl Searcher {
                     tmp_val = self.search_internal(board, status, i, alpha, beta, &timer);
                     if tmp_val >= beta {
                         beta = beta.saturating_add(window_size);
-                        window_size *= 2;
+                        window_size = window_size.saturating_mul(2);
                     }
                     else if tmp_val <= alpha {
                         alpha = alpha.saturating_sub(window_size);
-                        window_size *= 2;
+                        window_size = window_size.saturating_mul(2);
                     }
                     else {
                         break;
