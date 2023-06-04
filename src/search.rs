@@ -233,14 +233,31 @@ impl Searcher {
             to: Square::A1,
             promotion: None,
         };
+        let mut first_move = false;
         status.push_board_hash(board_hash);
 
         for (mv, iscapture) in it {
             let mut move_board = board.clone();
             move_board.play(mv);
 
-            let cur_value =
-                -self.search_internal(&move_board, status, depth - 1, -beta, -alpha, timer);
+            let cur_value = if first_move {
+                first_move = false;
+                -self.search_internal(&move_board, status, depth - 1, -beta, -alpha, timer)
+            } else {
+                let tmp_value = -self.search_internal(
+                    &move_board,
+                    status,
+                    depth - 1,
+                    -alpha - 1,
+                    -alpha,
+                    timer,
+                );
+                if alpha < tmp_value && tmp_value < beta {
+                    -self.search_internal(&move_board, status, depth - 1, -beta, -alpha, timer)
+                } else {
+                    tmp_value
+                }
+            };
 
             if cur_value > best_value {
                 best_value = cur_value;
