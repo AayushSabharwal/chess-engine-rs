@@ -190,7 +190,7 @@ impl Searcher {
         let mut tt_move = NULL_MOVE;
 
         if let Some(tte) = tt_res {
-            if tte.depth >= depth {
+            if status.ply > 0 && tte.depth >= depth {
                 match tte.node_type {
                     NodeType::Exact => {
                         if status.ply == 0 {
