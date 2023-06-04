@@ -318,24 +318,27 @@ fn qsearch(
 
     let stand_pat = evaluate::evaluate(board);
     if stand_pat >= beta {
-        return beta;
+        return stand_pat;
     }
     alpha = alpha.max(stand_pat);
 
     let move_buf = MovesIterator::with_capture_moves(board);
+    let mut best_value = stand_pat;
     for (mv, _) in move_buf {
         let mut move_board = board.clone();
         move_board.play(mv);
 
         let cur_value = -qsearch(&move_board, -beta, -alpha, timer, status);
 
+        best_value = best_value.max(cur_value);
+
         alpha = alpha.max(cur_value);
         if alpha >= beta {
-            return beta;
+            return alpha;
         }
     }
 
-    alpha
+    best_value
 }
 
 #[cfg(test)]
