@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use cozy_chess::Move;
 
 #[derive(Debug, Copy, Clone)]
@@ -22,9 +24,9 @@ pub struct TranspositionTable {
 }
 
 impl TranspositionTable {
-    pub fn new(size: usize) -> Self {
+    pub fn new(bytes: usize) -> Self {
         Self {
-            buffer: vec![None; size],
+            buffer: vec![None; bytes_to_entries(bytes)],
         }
     }
 
@@ -43,4 +45,9 @@ impl TranspositionTable {
             self.buffer[i] = None;
         }
     }
+
+}
+
+fn bytes_to_entries(bytes: usize) -> usize {
+    bytes / size_of::<Option<TTEntry>>()
 }
