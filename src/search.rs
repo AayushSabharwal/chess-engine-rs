@@ -121,8 +121,29 @@ impl Searcher {
 
         self.killers.fill(None);
         for i in 1..=self.max_depth {
-            let val =
-                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer);
+            let val = if i < 5 {
+                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer)
+            } else {
+                let mut window_size = 20;
+                let mut alpha = best_value - window_size;
+                let mut beta = best_value + window_size;
+                let mut tmp_val;
+                loop {
+                    tmp_val = self.search_internal(board, status, i, alpha, beta, &timer);
+                    if tmp_val >= beta {
+                        beta = beta.saturating_add(window_size);
+                        window_size *= 2;
+                    }
+                    else if tmp_val <= alpha {
+                        alpha = alpha.saturating_sub(window_size);
+                        window_size *= 2;
+                    }
+                    else {
+                        break;
+                    }
+                }
+                tmp_val
+            };
 
             if status.stop_search || timer.time_up() {
                 break;
