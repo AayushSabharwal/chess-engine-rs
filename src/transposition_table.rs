@@ -13,8 +13,8 @@ pub enum NodeType {
 pub struct TTEntry {
     pub hash: u64,
     pub best_move: Move,
-    pub best_value: i32,
-    pub depth: usize,
+    pub best_value: i16,
+    pub depth: u8,
     pub node_type: NodeType,
 }
 

@@ -211,26 +211,20 @@ impl Searcher {
         let mut tt_move = NULL_MOVE;
 
         if let Some(tte) = tt_res {
-            if status.ply > 0 && tte.depth >= depth {
+            if status.ply > 0 && tte.depth >= depth as u8 {
                 match tte.node_type {
                     NodeType::Exact => {
-                        if status.ply == 0 {
-                            status.best_move = tte.best_move;
-                        }
-                        return tte.best_value;
+                        return tte.best_value as i32;
                     }
                     NodeType::LowerBound => {
-                        alpha = alpha.max(tte.best_value);
+                        alpha = alpha.max(tte.best_value as i32);
                     }
                     NodeType::UpperBound => {
-                        beta = beta.min(tte.best_value);
+                        beta = beta.min(tte.best_value as i32);
                     }
                 }
                 if alpha >= beta {
-                    if status.ply == 0 {
-                        status.best_move = tte.best_move;
-                    }
-                    return tte.best_value;
+                    return tte.best_value as i32;
                 }
             }
 
@@ -311,8 +305,8 @@ impl Searcher {
             TTEntry {
                 hash: board_hash,
                 best_move,
-                best_value,
-                depth,
+                best_value: best_value as i16,
+                depth: depth as u8,
                 node_type,
             },
         );
