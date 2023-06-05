@@ -1,13 +1,15 @@
 use arrayvec::ArrayVec;
 use cozy_chess::{Board, Move};
 
+use crate::utils::history_index;
+
 pub struct MovesIterator {
     moves_evals: ArrayVec<(Move, i32, bool), 218>,
     cur: usize,
 }
 
 impl MovesIterator {
-    pub fn with_all_moves(board: &Board, tt_move: Move, killer: Option<Move>) -> Self {
+    pub fn with_all_moves(board: &Board, tt_move: Move, killer: Option<Move>, history: &[usize; 12 * 64]) -> Self {
         let mut moves_evals = ArrayVec::new();
 
         let enemy = board.colors(!board.side_to_move());
@@ -15,21 +17,21 @@ impl MovesIterator {
             let src_type = board.piece_on(moves.from).unwrap();
             for mv in moves {
                 if mv == tt_move {
-                    moves_evals.push((mv, i16::MAX as i32, enemy.has(mv.to)));
+                    moves_evals.push((mv, i32::MAX, enemy.has(mv.to)));
                 } else if enemy.has(mv.to) {
                     moves_evals.push((
                         mv,
-                        board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32 + 10,
+                        (board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32 + 10) << 16,
                         true,
                     ));
                 } else {
                     if let Some(kmv) = killer {
                         if kmv == mv {
-                            moves_evals.push((mv, 5, false));
+                            moves_evals.push((mv, 5 << 16, false));
                             continue;
                         }
                     }
-                    moves_evals.push((mv, 0, false));
+                    moves_evals.push((mv, history[history_index(board, &mv)] as i32, false));
                 }
             }
             false

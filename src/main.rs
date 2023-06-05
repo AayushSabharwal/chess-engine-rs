@@ -88,7 +88,7 @@ fn main() {
                 );
             }
             ThreadMessage::NewGame => {
-                searcher.tt.clear();
+                searcher.new_game();
             }
         }
     }
