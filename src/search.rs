@@ -6,7 +6,7 @@ use crate::{
     evaluate::{self, PIECE_VALUES},
     move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
-    utils::{NULL_MOVE, history_index},
+    utils::NULL_MOVE, history::HistoryTable,
 };
 
 pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
@@ -35,6 +35,7 @@ impl TimeControl {
 pub struct SearchStatus {
     stop_search: bool,
     board_history: Vec<u64>,
+    history: HistoryTable,
     killers: [Option<Move>; 128],
     best_move: Move,
     pub nodes_visited: usize,
@@ -54,6 +55,7 @@ impl SearchStatus {
         Self {
             stop_search: false,
             board_history,
+            history: HistoryTable::new(),
             killers: [None; 128],
             best_move: NULL_MOVE,
             nodes_visited: 0,
@@ -98,20 +100,17 @@ impl SearchStatus {
 #[derive(Debug)]
 pub struct Searcher {
     pub tt: TranspositionTable,
-    history: [usize; 12 * 64],
 }
 
 impl Searcher {
     pub fn new(tt_size: usize) -> Self {
         Self {
             tt: TranspositionTable::new(tt_size),
-            history: [0; 12 * 64],
         }
     }
 
     pub fn new_game(&mut self) {
         self.tt.clear();
-        self.history.fill(0);
     }
 
     pub fn search_for_time(
@@ -143,13 +142,9 @@ impl Searcher {
         let mut best_value = 0;
 
         let timer = TimeControl::new(move_time);
-        self.history.fill(0);
 
         for i in 1..=max_depth {
-
-            // for x in self.history.iter_mut() {
-            //     *x /= 2;
-            // }
+            status.history.normalize();
             let val = if i < 5 {
                 self.search_internal(board, status, i, -SCORE_INF, SCORE_INF, &timer)
             } else {
@@ -241,7 +236,7 @@ impl Searcher {
             return qsearch(board, alpha, beta, timer, status);
         }
 
-        let it = MovesIterator::with_all_moves(board, tt_move, status.killers[depth], &self.history);
+        let it = MovesIterator::with_all_moves(board, tt_move, status.killers[depth], &status.history);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move {
             from: Square::A1,
@@ -295,14 +290,7 @@ impl Searcher {
             if alpha >= beta {
                 if !iscapture {
                     status.killers[depth] = Some(mv);
-                    let idx = history_index(board, &mv);
-                    self.history[idx] += depth * depth;
-
-                    if self.history[idx] >= (1 << 15) {
-                        for x in self.history.iter_mut() {
-                            *x /= 2;
-                        }
-                    }
+                    status.history.update(board, &mv, depth);
                 }
 
                 break;

@@ -23,6 +23,7 @@ mod psqts;
 mod search;
 mod transposition_table;
 mod utils;
+mod history;
 
 #[derive(Debug)]
 enum ThreadMessage {

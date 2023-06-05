@@ -29,7 +29,3 @@ pub fn kxr_to_uci_move(board: &Board, mv: &mut Move) {
         };
     }
 }
-
-pub fn history_index(board: &Board, mv: &Move) -> usize {
-    (board.color_on(mv.from).unwrap() as usize * 6 + board.piece_on(mv.from).unwrap() as usize) * 64 + mv.to as usize
-}
