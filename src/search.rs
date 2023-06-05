@@ -1,16 +1,18 @@
-use cozy_chess::{Board, GameStatus, Move, Piece, Square};
+use cozy_chess::{Board, GameStatus, Move, Piece};
 
 use std::time::{Duration, Instant};
 
 use crate::{
     evaluate::{self, PIECE_VALUES},
+    history::HistoryTable,
     move_ordering::MovesIterator,
+    search_status::SearchStatus,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
-    utils::NULL_MOVE, history::HistoryTable, search_status::SearchStatus,
+    utils::NULL_MOVE, types::{Value, Depth},
 };
 
-pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
-const SCORE_INF: i32 = i16::MAX as i32;
+pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
+const SCORE_INF: Value = Value::MAX;
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -58,16 +60,16 @@ impl Searcher {
         board: &Board,
         status: &mut SearchStatus,
         move_time: Duration,
-    ) -> (Move, i32) {
-        self.search(board, status, 100, move_time)
+    ) -> (Move, Value) {
+        self.search(board, status, 128, move_time)
     }
 
     pub fn search_fixed_depth(
         &mut self,
         board: &Board,
         status: &mut SearchStatus,
-        depth: usize,
-    ) -> (Move, i32) {
+        depth: Depth,
+    ) -> (Move, Value) {
         self.search(board, status, depth, Duration::MAX)
     }
 
@@ -75,9 +77,9 @@ impl Searcher {
         &mut self,
         board: &Board,
         status: &mut SearchStatus,
-        max_depth: usize,
+        max_depth: Depth,
         move_time: Duration,
-    ) -> (Move, i32) {
+    ) -> (Move, Value) {
         let mut best_move = NULL_MOVE;
         let mut best_value = 0;
 
@@ -129,11 +131,11 @@ impl Searcher {
         &mut self,
         board: &Board,
         status: &mut SearchStatus,
-        depth: usize,
-        mut alpha: i32,
-        mut beta: i32,
+        depth: Depth,
+        mut alpha: Value,
+        mut beta: Value,
         timer: &TimeControl,
-    ) -> i32 {
+    ) -> Value {
         status.nodes_visited += 1;
 
         if self.stop_search || status.nodes_visited % 1024 == 0 && timer.time_up() {
@@ -153,20 +155,20 @@ impl Searcher {
         let mut tt_move = NULL_MOVE;
 
         if let Some(tte) = tt_res {
-            if status.ply > 0 && tte.depth >= depth as u8 {
+            if status.ply > 0 && tte.depth >= depth {
                 match tte.node_type {
                     NodeType::Exact => {
-                        return tte.best_value as i32;
+                        return tte.best_value;
                     }
                     NodeType::LowerBound => {
-                        alpha = alpha.max(tte.best_value as i32);
+                        alpha = alpha.max(tte.best_value);
                     }
                     NodeType::UpperBound => {
-                        beta = beta.min(tte.best_value as i32);
+                        beta = beta.min(tte.best_value);
                     }
                 }
                 if alpha >= beta {
-                    return tte.best_value as i32;
+                    return tte.best_value;
                 }
             }
 
@@ -174,7 +176,7 @@ impl Searcher {
         }
 
         if board.status() == GameStatus::Won {
-            return -(MATE_VALUE - status.ply);
+            return -(MATE_VALUE - Value::from(status.ply));
         } else if board.status() == GameStatus::Drawn {
             return 0;
         }
@@ -183,20 +185,17 @@ impl Searcher {
             return qsearch(board, alpha, beta, timer, status);
         }
 
-        let it = MovesIterator::with_all_moves(board, tt_move, self.killers[depth], &self.history);
-        let mut best_value = i16::MIN as i32;
-        let mut best_move = Move {
-            from: Square::A1,
-            to: Square::A1,
-            promotion: None,
-        };
+        let it = MovesIterator::with_all_moves(board, tt_move, self.killers[usize::from(depth)], &self.history);
+        let mut best_value = -SCORE_INF;
+        let mut best_move = NULL_MOVE;
         let mut first_move = false;
         status.push_board_hash(board_hash);
 
         if !is_pv_node && depth >= 3 {
             let null_move = board.null_move();
             if let Some(move_board) = null_move {
-                let null_move_value = -self.search_internal(&move_board, status, depth - 3, -beta, -beta + 1, timer);
+                let null_move_value =
+                    -self.search_internal(&move_board, status, depth - 3, -beta, -beta + 1, timer);
                 if null_move_value >= beta {
                     status.pop_board_hash();
                     return null_move_value;
@@ -236,8 +235,8 @@ impl Searcher {
 
             if alpha >= beta {
                 if !iscapture {
-                    self.killers[depth] = Some(mv);
-                    self.history.update(board, &mv, depth);
+                    self.killers[usize::from(depth)] = Some(mv);
+                    self.history.update(board, mv, depth);
                 }
 
                 break;
@@ -254,16 +253,13 @@ impl Searcher {
             NodeType::Exact
         };
 
-        debug_assert!(i16::MIN as i32 <= best_value && best_value <= i16::MAX as i32);
-        debug_assert!(depth <= u8::MAX as usize);
-
         self.tt.set(
             board_hash,
             TTEntry {
                 hash: board_hash,
                 best_move,
-                best_value: best_value as i16,
-                depth: depth as u8,
+                best_value,
+                depth,
                 node_type,
             },
         );
@@ -278,11 +274,11 @@ impl Searcher {
 
 fn qsearch(
     board: &Board,
-    mut alpha: i32,
-    beta: i32,
+    mut alpha: Value,
+    beta: Value,
     timer: &TimeControl,
     status: &mut SearchStatus,
-) -> i32 {
+) -> Value {
     status.nodes_visited += 1;
     if status.nodes_visited % 1024 == 0 && timer.time_up() {
         return 0;
@@ -312,8 +308,6 @@ fn qsearch(
 
     best_value
 }
-
-
 
 #[cfg(test)]
 mod test {

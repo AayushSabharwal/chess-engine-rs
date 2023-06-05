@@ -1,3 +1,9 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
+#![allow(
+    clippy::similar_names,
+    clippy::module_name_repetitions,
+    clippy::too_many_lines
+)]
 use std::{
     env,
     io::stdin,
@@ -14,17 +20,18 @@ use cozy_uci::{
 };
 use search::Searcher;
 use utils::uci_to_kxr_move;
-use UciParseErrorKind::*;
+use UciParseErrorKind::UnknownMessageKind;
 
 use crate::{search_status::SearchStatus, utils::kxr_to_uci_move};
 mod evaluate;
+mod history;
 mod move_ordering;
 mod psqts;
 mod search;
 mod search_status;
 mod transposition_table;
+mod types;
 mod utils;
-mod history;
 
 #[derive(Debug)]
 enum ThreadMessage {
@@ -62,7 +69,7 @@ fn main() {
         let task = match rx.recv() {
             Ok(r) => r,
             Err(e) => {
-                panic!("AAA {}", e);
+                panic!("AAA {e}");
             }
         };
 
@@ -96,6 +103,7 @@ fn main() {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn uci_handler(tx: Sender<ThreadMessage>) {
     let options = UciFormatOptions::default();
     let mut cur_board = Board::startpos();
@@ -105,6 +113,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
         let mut line = String::new();
         stdin().read_line(&mut line).unwrap();
 
+        #[allow(clippy::match_same_arms)]
         match UciCommand::parse_from(&line, &options) {
             Ok(cmd) => match cmd {
                 UciCommand::Uci => {
@@ -169,7 +178,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
             },
             Err(err) => {
                 if !matches!(err.kind, UnknownMessageKind(_)) {
-                    println!("{}", err);
+                    println!("{err}");
                     continue;
                 }
             }
@@ -180,7 +189,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
 fn run_benchmark() {
     let mut searcher: Searcher = Searcher::new(100_000_000);
     let mut total_nodes = 0;
-    let mut total_time = 0;
+    let mut total_time = 0.0;
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
         searcher.tt.clear();
         let board = fen.parse::<Board>().unwrap();
@@ -189,22 +198,22 @@ fn run_benchmark() {
         let (bm, bv) = searcher.search_fixed_depth(&board, &mut status, 7);
         let duration = start.elapsed();
         total_nodes += status.nodes_visited;
-        total_time += duration.as_micros();
+        total_time += duration.as_secs_f64();
 
         println!(
             "Position [{i:02}]: Move {:} Value {bv:8} | {:10} Nodes in {:6.3}s at {:10.2} KNPS",
             bm,
             status.nodes_visited,
-            duration.as_micros() as f64 / 1e6,
-            status.nodes_visited as f64 / duration.as_micros() as f64 * 1e3
+            duration.as_secs_f64(),
+            f64::from(status.nodes_visited) / duration.as_secs_f64() / 1e3,
         );
     }
 
     println!(
         "Total: {:12} Nodes in {:6.3}s at {:10.2} NPS",
         total_nodes,
-        total_time as f64 / 1e6,
-        total_nodes as f64 / total_time as f64 * 1e3
+        total_time,
+        f64::from(total_nodes) / total_time / 1e3
     );
 }
 
@@ -227,7 +236,10 @@ mod test {
     use cozy_chess::{Board, GameStatus};
     use std::{fs, time::Duration};
 
-    use crate::{search::{Searcher, MATE_VALUE}, search_status::SearchStatus};
+    use crate::{
+        search::{Searcher, MATE_VALUE},
+        search_status::SearchStatus,
+    };
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;

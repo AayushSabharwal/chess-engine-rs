@@ -9,7 +9,12 @@ pub struct MovesIterator {
 }
 
 impl MovesIterator {
-    pub fn with_all_moves(board: &Board, tt_move: Move, killer: Option<Move>, history: &HistoryTable) -> Self {
+    pub fn with_all_moves(
+        board: &Board,
+        tt_move: Move,
+        killer: Option<Move>,
+        history: &HistoryTable,
+    ) -> Self {
         let mut moves_evals = ArrayVec::new();
 
         let enemy = board.colors(!board.side_to_move());
@@ -21,17 +26,18 @@ impl MovesIterator {
                 } else if enemy.has(mv.to) {
                     moves_evals.push((
                         mv,
-                        (board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32 + 10) + i32::from(HISTORY_LIMIT),
+                        (board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32 + 10)
+                            + i32::from(HISTORY_LIMIT),
                         true,
                     ));
                 } else {
                     if let Some(kmv) = killer {
                         if kmv == mv {
-                            moves_evals.push((mv, HISTORY_LIMIT as i32, false));
+                            moves_evals.push((mv, i32::from(HISTORY_LIMIT), false));
                             continue;
                         }
                     }
-                    moves_evals.push((mv, history.get(board, &mv) as i32, false));
+                    moves_evals.push((mv, i32::from(history.get(board, mv)), false));
                 }
             }
             false

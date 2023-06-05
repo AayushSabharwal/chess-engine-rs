@@ -30,11 +30,13 @@ impl TranspositionTable {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn get(&self, hash: u64) -> Option<TTEntry> {
         let idx = hash as usize % self.buffer.len();
         self.buffer[idx].filter(|&tte| tte.hash == hash)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn set(&mut self, hash: u64, value: TTEntry) {
         let idx = hash as usize % self.buffer.len();
         self.buffer[idx] = Some(value);
@@ -47,6 +49,6 @@ impl TranspositionTable {
     }
 }
 
-fn bytes_to_entries(bytes: usize) -> usize {
+const fn bytes_to_entries(bytes: usize) -> usize {
     bytes / size_of::<Option<TTEntry>>()
 }

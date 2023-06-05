@@ -1,10 +1,11 @@
 use cozy_chess::{Board, Color, Square};
 
-use crate::psqts::{EG_TABLE, EG_VALUE, GAME_PHASE_INC, MG_TABLE, MG_VALUE};
+use crate::{psqts::{EG_TABLE, EG_VALUE, GAME_PHASE_INC, MG_TABLE, MG_VALUE}, types::Value};
 
-pub const PIECE_VALUES: [i32; 6] = [100, 250, 300, 500, 900, 10000];
+pub const PIECE_VALUES: [Value; 6] = [100, 250, 300, 500, 900, 10000];
 
-pub fn evaluate(board: &Board) -> i32 {
+#[allow(clippy::cast_possible_truncation)]
+pub fn evaluate(board: &Board) -> Value {
     let cur_side = board.side_to_move();
     let oth_side = !cur_side;
     let mut eg = [0; 2];
@@ -34,5 +35,6 @@ pub fn evaluate(board: &Board) -> i32 {
     let eg_eval = eg[cur_side as usize] - eg[oth_side as usize];
     let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
-    (mg_eval * mg_phase + eg_eval * eg_phase) / 24
+
+    ((mg_eval * mg_phase + eg_eval * eg_phase) / 24) as Value
 }

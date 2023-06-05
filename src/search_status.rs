@@ -1,13 +1,13 @@
 use cozy_chess::Move;
 
-use crate::utils::NULL_MOVE;
+use crate::{utils::NULL_MOVE, types::Depth};
 
 #[derive(Debug)]
 pub struct SearchStatus {
     board_history: Vec<u64>,
     pub best_move: Move,
-    pub nodes_visited: usize,
-    pub ply: i32,
+    pub nodes_visited: u32,
+    pub ply: Depth,
 }
 
 impl SearchStatus {
@@ -61,7 +61,6 @@ impl SearchStatus {
         self.ply -= 1;
     }
 }
-
 
 impl Default for SearchStatus {
     fn default() -> Self {
