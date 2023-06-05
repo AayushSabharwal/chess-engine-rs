@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
+const SCORE_INF: i32 = i16::MAX as i32;
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -34,6 +35,7 @@ impl TimeControl {
 pub struct SearchStatus {
     stop_search: bool,
     board_history: Vec<u64>,
+    killers: [Option<Move>; 128],
     best_move: Move,
     pub nodes_visited: usize,
     ply: i32,
@@ -52,6 +54,7 @@ impl SearchStatus {
         Self {
             stop_search: false,
             board_history,
+            killers: [None; 128],
             best_move: NULL_MOVE,
             nodes_visited: 0,
             ply: 0,
@@ -94,24 +97,39 @@ impl SearchStatus {
 
 #[derive(Debug)]
 pub struct Searcher {
-    max_depth: usize,
     pub tt: TranspositionTable,
-    killers: [Option<Move>; 128],
 }
 
 impl Searcher {
-    pub fn new(max_depth: usize, tt_size: usize) -> Self {
+    pub fn new(tt_size: usize) -> Self {
         Self {
-            max_depth,
             tt: TranspositionTable::new(tt_size),
-            killers: [None; 128],
         }
+    }
+
+    pub fn search_for_time(
+        &mut self,
+        board: &Board,
+        status: &mut SearchStatus,
+        move_time: Duration,
+    ) -> (Move, i32) {
+        self.search(board, status, 100, move_time)
+    }
+
+    pub fn search_fixed_depth(
+        &mut self,
+        board: &Board,
+        status: &mut SearchStatus,
+        depth: usize,
+    ) -> (Move, i32) {
+        self.search(board, status, depth, Duration::MAX)
     }
 
     pub fn search(
         &mut self,
         board: &Board,
         status: &mut SearchStatus,
+        max_depth: usize,
         move_time: Duration,
     ) -> (Move, i32) {
         let mut best_move = NULL_MOVE;
@@ -119,10 +137,9 @@ impl Searcher {
 
         let timer = TimeControl::new(move_time);
 
-        self.killers.fill(None);
-        for i in 1..=self.max_depth {
+        for i in 1..=max_depth {
             let val = if i < 5 {
-                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer)
+                self.search_internal(board, status, i, -SCORE_INF, SCORE_INF, &timer)
             } else {
                 let mut window_size = 20;
                 let mut alpha = best_value - window_size;
@@ -133,44 +150,15 @@ impl Searcher {
                     if tmp_val >= beta {
                         beta = beta.saturating_add(window_size);
                         window_size = window_size.saturating_mul(2);
-                    }
-                    else if tmp_val <= alpha {
+                    } else if tmp_val <= alpha {
                         alpha = alpha.saturating_sub(window_size);
                         window_size = window_size.saturating_mul(2);
-                    }
-                    else {
+                    } else {
                         break;
                     }
                 }
                 tmp_val
             };
-
-            if status.stop_search || timer.time_up() {
-                break;
-            }
-
-            best_move = status.best_move;
-            best_value = val;
-        }
-
-        (best_move, best_value)
-    }
-
-    pub fn search_fixed_depth(
-        &mut self,
-        board: &Board,
-        status: &mut SearchStatus,
-        depth: usize,
-    ) -> (Move, i32) {
-        let mut best_move = NULL_MOVE;
-        let mut best_value = 0;
-
-        let timer = TimeControl::new(Duration::from_secs(10));
-
-        self.killers.fill(None);
-        for i in 1..=depth {
-            let val =
-                self.search_internal(board, status, i, i16::MIN as i32, i16::MAX as i32, &timer);
 
             if status.stop_search || timer.time_up() {
                 break;
@@ -241,7 +229,7 @@ impl Searcher {
             return qsearch(board, alpha, beta, timer, status);
         }
 
-        let it = MovesIterator::with_all_moves(board, tt_move, self.killers[depth]);
+        let it = MovesIterator::with_all_moves(board, tt_move, status.killers[depth]);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move {
             from: Square::A1,
@@ -283,7 +271,7 @@ impl Searcher {
 
             if alpha >= beta {
                 if !iscapture {
-                    self.killers[depth] = Some(mv);
+                    status.killers[depth] = Some(mv);
                 }
 
                 break;
@@ -363,7 +351,7 @@ mod test {
     use arrayvec::ArrayVec;
     use cozy_chess::{Board, Move};
 
-    use crate::search::TimeControl;
+    use crate::search::{TimeControl, SCORE_INF};
 
     use super::{SearchStatus, Searcher};
 
@@ -388,12 +376,12 @@ mod test {
 
         let mut status = SearchStatus::new(board_history);
         let timer = TimeControl::new(Duration::from_secs(1));
-        let bv = Searcher::new(1000, 1000).search_internal(
+        let bv = Searcher::new(10_000_000).search_internal(
             &board,
             &mut status,
             100,
-            i32::MIN,
-            i32::MAX,
+            -SCORE_INF,
+            SCORE_INF,
             &timer,
         );
         assert_eq!(bv, 0);
@@ -402,7 +390,7 @@ mod test {
     #[test]
     fn force_repetition() {
         let board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
-        let (bm, bv) = Searcher::new(100, 100000).search(
+        let (bm, bv) = Searcher::new(10_000_000).search_for_time(
             &board,
             &mut SearchStatus::new(std::iter::empty()),
             Duration::from_secs(10),

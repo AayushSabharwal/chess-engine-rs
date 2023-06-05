@@ -53,7 +53,7 @@ fn main() {
         uci_handler(tx);
     });
 
-    let mut searcher = Searcher::new(100, 100_000_000);
+    let mut searcher = Searcher::new(100_000_000);
 
     let options = UciFormatOptions::default();
     loop {
@@ -73,7 +73,7 @@ fn main() {
             } => {
                 let mut status = SearchStatus::new(board_history);
                 let (mut bm, _bv) =
-                    searcher.search(&board, &mut status, time_left / 20 + time_inc / 2);
+                    searcher.search_for_time(&board, &mut status, time_left / 20 + time_inc / 2);
 
                 println!("info nodes {}", status.nodes_visited);
 
@@ -176,7 +176,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
 }
 
 fn run_benchmark() {
-    let mut searcher: Searcher = Searcher::new(5, 100_000_000);
+    let mut searcher: Searcher = Searcher::new(100_000_000);
     let mut total_nodes = 0;
     let mut total_time = 0;
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
@@ -213,7 +213,7 @@ fn hyperfine() {
         .unwrap();
     // println!("{board}");
     //
-    dbg!(Searcher::new(5, 100_000_000).search(
+    dbg!(Searcher::new(100_000_000).search_for_time(
         &board,
         &mut SearchStatus::new(std::iter::empty()),
         Duration::from_secs(10)
@@ -229,10 +229,10 @@ mod test {
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;
-        let mut searcher = Searcher::new(ply, 100_000_000);
+        let mut searcher = Searcher::new(100_000_000);
         for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
             let mut board = Board::from_fen(fen, false).unwrap();
-            let (mut bm, bv) = searcher.search(
+            let (mut bm, bv) = searcher.search_for_time(
                 &board,
                 &mut SearchStatus::new(std::iter::empty()),
                 Duration::from_secs(10),
@@ -240,7 +240,7 @@ mod test {
             board.play(bm);
             assert!(bv > MATE_VALUE - 100);
             for _ in 1..ply {
-                (bm, _) = searcher.search(
+                (bm, _) = searcher.search_for_time(
                     &board,
                     &mut SearchStatus::new(std::iter::empty()),
                     Duration::from_secs(10),

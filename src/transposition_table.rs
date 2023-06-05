@@ -45,7 +45,6 @@ impl TranspositionTable {
             self.buffer[i] = None;
         }
     }
-
 }
 
 fn bytes_to_entries(bytes: usize) -> usize {
