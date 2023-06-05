@@ -16,11 +16,12 @@ use search::Searcher;
 use utils::uci_to_kxr_move;
 use UciParseErrorKind::*;
 
-use crate::{search::SearchStatus, utils::kxr_to_uci_move};
+use crate::{search_status::SearchStatus, utils::kxr_to_uci_move};
 mod evaluate;
 mod move_ordering;
 mod psqts;
 mod search;
+mod search_status;
 mod transposition_table;
 mod utils;
 mod history;
@@ -184,7 +185,7 @@ fn run_benchmark() {
         searcher.tt.clear();
         let board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
-        let mut status = SearchStatus::new(std::iter::empty());
+        let mut status = SearchStatus::default();
         let (bm, bv) = searcher.search_fixed_depth(&board, &mut status, 7);
         let duration = start.elapsed();
         total_nodes += status.nodes_visited;
@@ -216,7 +217,7 @@ fn hyperfine() {
     //
     dbg!(Searcher::new(100_000_000).search_for_time(
         &board,
-        &mut SearchStatus::new(std::iter::empty()),
+        &mut SearchStatus::default(),
         Duration::from_secs(10)
     ));
 }
@@ -226,7 +227,7 @@ mod test {
     use cozy_chess::{Board, GameStatus};
     use std::{fs, time::Duration};
 
-    use crate::search::{SearchStatus, Searcher, MATE_VALUE};
+    use crate::{search::{Searcher, MATE_VALUE}, search_status::SearchStatus};
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;
@@ -235,7 +236,7 @@ mod test {
             let mut board = Board::from_fen(fen, false).unwrap();
             let (mut bm, bv) = searcher.search_for_time(
                 &board,
-                &mut SearchStatus::new(std::iter::empty()),
+                &mut SearchStatus::default(),
                 Duration::from_secs(10),
             );
             board.play(bm);
@@ -243,7 +244,7 @@ mod test {
             for _ in 1..ply {
                 (bm, _) = searcher.search_for_time(
                     &board,
-                    &mut SearchStatus::new(std::iter::empty()),
+                    &mut SearchStatus::default(),
                     Duration::from_secs(10),
                 );
                 board.play(bm);

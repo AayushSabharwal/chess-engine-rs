@@ -6,7 +6,7 @@ use crate::{
     evaluate::{self, PIECE_VALUES},
     move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
-    utils::NULL_MOVE, history::HistoryTable,
+    utils::NULL_MOVE, history::HistoryTable, search_status::SearchStatus,
 };
 
 pub const MATE_VALUE: i32 = PIECE_VALUES[Piece::King as usize];
@@ -32,80 +32,20 @@ impl TimeControl {
 }
 
 #[derive(Debug)]
-pub struct SearchStatus {
-    stop_search: bool,
-    board_history: Vec<u64>,
-    history: HistoryTable,
-    killers: [Option<Move>; 128],
-    best_move: Move,
-    pub nodes_visited: usize,
-    ply: i32,
-}
-
-impl SearchStatus {
-    pub fn new<T>(history: T) -> Self
-    where
-        T: IntoIterator<Item = u64>,
-    {
-        let mut board_history = Vec::new();
-        board_history.reserve(512);
-        for i in history {
-            board_history.push(i);
-        }
-        Self {
-            stop_search: false,
-            board_history,
-            history: HistoryTable::new(),
-            killers: [None; 128],
-            best_move: NULL_MOVE,
-            nodes_visited: 0,
-            ply: 0,
-        }
-    }
-
-    fn is_repetition_draw(&self, halfmove_count: usize, board_hash: u64) -> bool {
-        if halfmove_count < 4 {
-            return false;
-        }
-        let mut rep_count = 0;
-        for &hash in self
-            .board_history
-            .iter()
-            .rev()
-            .take(halfmove_count)
-            .skip(1)
-            .step_by(2)
-        {
-            if hash == board_hash {
-                rep_count += 1;
-                if rep_count >= 2 {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    fn push_board_hash(&mut self, board_hash: u64) {
-        self.board_history.push(board_hash);
-        self.ply += 1;
-    }
-
-    fn pop_board_hash(&mut self) {
-        self.board_history.pop();
-        self.ply -= 1;
-    }
-}
-
-#[derive(Debug)]
 pub struct Searcher {
     pub tt: TranspositionTable,
+    stop_search: bool,
+    history: HistoryTable,
+    killers: [Option<Move>; 128],
 }
 
 impl Searcher {
     pub fn new(tt_size: usize) -> Self {
         Self {
             tt: TranspositionTable::new(tt_size),
+            stop_search: false,
+            history: HistoryTable::new(),
+            killers: [None; 128],
         }
     }
 
@@ -142,9 +82,9 @@ impl Searcher {
         let mut best_value = 0;
 
         let timer = TimeControl::new(move_time);
+        self.search_reset();
 
         for i in 1..=max_depth {
-            status.history.normalize();
             let val = if i < 5 {
                 self.search_internal(board, status, i, -SCORE_INF, SCORE_INF, &timer)
             } else {
@@ -167,7 +107,8 @@ impl Searcher {
                 tmp_val
             };
 
-            if status.stop_search || timer.time_up() {
+            self.history.normalize();
+            if self.stop_search || timer.time_up() {
                 break;
             }
 
@@ -176,6 +117,12 @@ impl Searcher {
         }
 
         (best_move, best_value)
+    }
+
+    fn search_reset(&mut self) {
+        self.stop_search = false;
+        self.history.clear();
+        self.killers.fill(None);
     }
 
     fn search_internal(
@@ -189,8 +136,8 @@ impl Searcher {
     ) -> i32 {
         status.nodes_visited += 1;
 
-        if status.stop_search || status.nodes_visited % 1024 == 0 && timer.time_up() {
-            status.stop_search = true;
+        if self.stop_search || status.nodes_visited % 1024 == 0 && timer.time_up() {
+            self.stop_search = true;
             return 0;
         }
 
@@ -236,7 +183,7 @@ impl Searcher {
             return qsearch(board, alpha, beta, timer, status);
         }
 
-        let it = MovesIterator::with_all_moves(board, tt_move, status.killers[depth], &status.history);
+        let it = MovesIterator::with_all_moves(board, tt_move, self.killers[depth], &self.history);
         let mut best_value = i16::MIN as i32;
         let mut best_move = Move {
             from: Square::A1,
@@ -289,8 +236,8 @@ impl Searcher {
 
             if alpha >= beta {
                 if !iscapture {
-                    status.killers[depth] = Some(mv);
-                    status.history.update(board, &mv, depth);
+                    self.killers[depth] = Some(mv);
+                    self.history.update(board, &mv, depth);
                 }
 
                 break;

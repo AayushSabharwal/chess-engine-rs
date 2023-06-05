@@ -36,6 +36,10 @@ impl HistoryTable {
             *x /= 2;
         }
     }
+
+    pub fn clear(&mut self) {
+        self.table.fill(0);
+    }
 }
 
 pub fn history_delta(depth: usize) -> i16 {
