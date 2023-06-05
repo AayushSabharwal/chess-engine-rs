@@ -288,6 +288,9 @@ impl Searcher {
             NodeType::Exact
         };
 
+        debug_assert!(i16::MIN as i32 <= best_value && best_value <= i16::MAX as i32);
+        debug_assert!(depth <= u8::MAX as usize);
+
         self.tt.set(
             board_hash,
             TTEntry {
