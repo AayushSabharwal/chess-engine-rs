@@ -188,8 +188,8 @@ impl Searcher {
         }
 
         let alpha_orig = alpha;
-
         let board_hash = board.hash();
+        let is_pv_node = (beta - alpha) != 1;
 
         if status.is_repetition_draw(board.halfmove_clock() as usize, board_hash) {
             return 0;
@@ -238,6 +238,17 @@ impl Searcher {
         };
         let mut first_move = false;
         status.push_board_hash(board_hash);
+
+        if !is_pv_node && depth >= 3 {
+            let null_move = board.null_move();
+            if let Some(move_board) = null_move {
+                let null_move_value = -self.search_internal(&move_board, status, depth - 3, -beta, -beta + 1, timer);
+                if null_move_value >= beta {
+                    status.pop_board_hash();
+                    return null_move_value;
+                }
+            }
+        }
 
         for (mv, iscapture) in it {
             let mut move_board = board.clone();
