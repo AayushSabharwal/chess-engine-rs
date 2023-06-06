@@ -242,7 +242,7 @@ mod test {
                 &mut board,
                 &Vec::new(),
                 &mut SearchStats::default(),
-                Duration::from_secs(10),
+                Duration::from_millis(100),
             );
             board.play(bm);
 
@@ -252,7 +252,7 @@ mod test {
                     &mut board,
                     &Vec::new(),
                     &mut SearchStats::default(),
-                    Duration::from_secs(10),
+                    Duration::from_millis(100),
                 );
                 board.play(bm);
             }

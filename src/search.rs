@@ -177,7 +177,7 @@ impl Searcher {
 
         let alpha_orig = alpha;
         let board_hash = board.hash();
-        let is_pv_node = (beta - alpha) != 1;
+        let is_pv_node = beta > alpha + 1;
 
         if self.is_repetition_draw(board.halfmove_clock() as usize, board_hash) {
             return 0;
@@ -380,7 +380,7 @@ mod test {
     use arrayvec::ArrayVec;
     use cozy_chess::{Board, Move};
 
-    use crate::search::{SearchStats, TimeControl, SCORE_INF};
+    use crate::search::SearchStats;
 
     use super::Searcher;
 
@@ -401,15 +401,14 @@ mod test {
         .collect::<Vec<Move>>();
 
         let mut stats = SearchStats::default();
-        let timer = TimeControl::new(Duration::from_secs(1));
-        let bv = Searcher::new(10_000_000)
-            .search_internal(&mut board, &mut stats, 100, -SCORE_INF, SCORE_INF, &timer);
+        let (_, bv) = Searcher::new(10_000_000)
+            .search_for_time(&mut board, &moves, &mut stats, Duration::from_secs(1));
         assert_eq!(bv, 0);
     }
 
     #[test]
     fn force_repetition() {
-        let board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
+        let mut board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
         let (bm, bv) = Searcher::new(10_000_000).search_for_time(
             &mut board,
             &Vec::new(),
