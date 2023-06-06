@@ -5,14 +5,17 @@ use std::time::{Duration, Instant};
 use crate::{
     evaluate::{self, PIECE_VALUES},
     history::HistoryTable,
+    lmr_table::LMRTable,
     move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
     types::{Depth, Value},
-    utils::{NULL_MOVE, uci_to_kxr_move}, lmr_table::LMRTable,
+    utils::{uci_to_kxr_move, NULL_MOVE},
 };
 
 pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
 const SCORE_INF: Value = Value::MAX;
+const LMR_MIN_MOVES: usize = 5;
+const LMR_MIN_DEPTH: Depth = 3;
 
 #[derive(Debug)]
 pub struct TimeControl {
@@ -249,16 +252,17 @@ impl Searcher {
                 -self.search_internal(&move_board, stats, depth - 1, -beta, -alpha, timer)
             } else {
                 let mut reduction = 0;
-                if !iscapture && mv.promotion.is_none() && board.checkers().is_empty() && move_board.checkers().is_empty() {
+                if depth >= LMR_MIN_DEPTH
+                    && move_num >= (2 + 2 * usize::from(is_pv_node))
+                    && !iscapture
+                    && mv.promotion.is_none()
+                    && move_board.checkers().is_empty()
+                {
                     reduction = self.lmr_table.get(depth, move_num);
-                    if !is_pv_node {
-                        reduction += 1;
-                    }
-                    reduction = reduction.clamp(0, (depth.saturating_sub(2)).max(1));
+                    reduction = reduction.clamp(0, depth - 2);
                 };
 
-                let new_depth = depth.saturating_sub(reduction + 1);
-                // println!("{new_depth}");
+                let new_depth = depth - reduction - 1;
                 let tmp_value =
                     -self.search_internal(&move_board, stats, new_depth, -alpha - 1, -alpha, timer);
                 if alpha < tmp_value && tmp_value < beta {
@@ -412,14 +416,19 @@ mod test {
         .collect::<Vec<Move>>();
 
         let mut stats = SearchStats::default();
-        let (_, bv) = Searcher::new(10_000_000)
-            .search_for_time(&mut board, &moves, &mut stats, Duration::from_secs(1));
+        let (_, bv) = Searcher::new(10_000_000).search_for_time(
+            &mut board,
+            &moves,
+            &mut stats,
+            Duration::from_secs(1),
+        );
         assert_eq!(bv, 0);
     }
 
     #[test]
     fn force_repetition() {
-        let mut board = Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
+        let mut board =
+            Board::from_fen("7k/5pp1/6p1/8/1rn3Q1/qrb5/8/3K4 w - - 0 1", false).unwrap();
         let (bm, bv) = Searcher::new(10_000_000).search_for_time(
             &mut board,
             &Vec::new(),
