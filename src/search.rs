@@ -248,13 +248,17 @@ impl Searcher {
             let cur_value = if move_num == 0 {
                 -self.search_internal(&move_board, stats, depth - 1, -beta, -alpha, timer)
             } else {
-                let reduction = if iscapture || mv.promotion.is_some() || !board.checkers().is_empty() || !move_board.checkers().is_empty() {
-                    0
-                } else {
-                    self.lmr_table.get(depth, move_num)
+                let mut reduction = 0;
+                if !iscapture && mv.promotion.is_none() && board.checkers().is_empty() && move_board.checkers().is_empty() {
+                    reduction = self.lmr_table.get(depth, move_num);
+                    if !is_pv_node {
+                        reduction += 1;
+                    }
+                    reduction = reduction.clamp(0, (depth.saturating_sub(2)).max(1));
                 };
 
-                let new_depth = depth - reduction - 1;
+                let new_depth = depth.saturating_sub(reduction + 1);
+                // println!("{new_depth}");
                 let tmp_value =
                     -self.search_internal(&move_board, stats, new_depth, -alpha - 1, -alpha, timer);
                 if alpha < tmp_value && tmp_value < beta {
