@@ -14,7 +14,6 @@ use crate::{
 
 pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
 const SCORE_INF: Value = Value::MAX;
-const LMR_MIN_MOVES: usize = 5;
 const LMR_MIN_DEPTH: Depth = 3;
 
 #[derive(Debug)]

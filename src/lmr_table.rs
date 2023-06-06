@@ -9,6 +9,12 @@ pub struct LMRTable {
 }
 
 impl LMRTable {
+    #[allow(
+        clippy::needless_range_loop,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
     pub fn new() -> Self {
         let mut table = [[0; 64]; 64];
 
