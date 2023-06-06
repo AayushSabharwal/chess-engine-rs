@@ -9,6 +9,11 @@ pub const PIECE_VALUES: [Value; 6] = [100, 250, 300, 500, 900, 10000];
 
 #[allow(clippy::cast_possible_truncation)]
 pub fn evaluate(board: &Board) -> Value {
+    // Piece-Square Tables
+    // These tables (in psqts.rs) assign a value to a particular piece being in a particular position
+    // in the middle and end game. Pieces are preferred to be in certain locations at certain stages
+    // of the game, and we reward them for doing so. Tables of piece value are also used to account
+    // for material difference between the two sides.
     let cur_side = board.side_to_move();
     let oth_side = !cur_side;
     let mut eg = [0; 2];

@@ -21,22 +21,28 @@ impl MovesIterator {
         board.generate_moves(|moves| {
             let src_type = board.piece_on(moves.from).unwrap();
             for mv in moves {
+                // Order TT move first
                 if mv == tt_move {
                     moves_evals.push((mv, i32::MAX, enemy.has(mv.to)));
                 } else if enemy.has(mv.to) {
+                    // Move is a capture
+                    // Most Valuable Victim - Least Valuable Attacker (MVV-LVA)
+                    // We prefer to take higher value pieces with lower value ones.
                     moves_evals.push((
                         mv,
-                        (board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32 + 10)
+                        (board.piece_on(mv.to).unwrap() as i32 * 10 - src_type as i32)
                             + i32::from(HISTORY_LIMIT),
                         true,
                     ));
                 } else {
+                    // Killer moves are ranked right after winning captures
                     if let Some(kmv) = killer {
                         if kmv == mv {
                             moves_evals.push((mv, i32::from(HISTORY_LIMIT), false));
                             continue;
                         }
                     }
+                    // Use history for all other non-capture moves
                     moves_evals.push((mv, i32::from(history.get(board, mv)), false));
                 }
             }
