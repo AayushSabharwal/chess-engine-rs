@@ -8,7 +8,7 @@ use crate::{
     move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
     types::{Depth, Value},
-    utils::NULL_MOVE,
+    utils::{NULL_MOVE, uci_to_kxr_move},
 };
 
 pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
@@ -33,19 +33,10 @@ impl TimeControl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SearchStats {
     pub nodes_visited: u32,
     pub depth: u8,
-}
-
-impl Default for SearchStats {
-    fn default() -> Self {
-        Self {
-            nodes_visited: 0,
-            depth: 0,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -54,7 +45,7 @@ pub struct Searcher {
     board_history: Vec<u64>,
     stop_search: bool,
     history: HistoryTable,
-    killers: [Option<Move>; 128],
+    killers: [Option<Move>; 257],
     best_move: Move,
     ply: u8,
 }
@@ -68,7 +59,7 @@ impl Searcher {
             board_history,
             stop_search: false,
             history: HistoryTable::new(),
-            killers: [None; 128],
+            killers: [None; 257],
             best_move: NULL_MOVE,
             ply: 0,
         }
@@ -85,7 +76,7 @@ impl Searcher {
         stats: &mut SearchStats,
         move_time: Duration,
     ) -> (Move, Value) {
-        self.search(board, moves, stats, 128, move_time)
+        self.search(board, moves, stats, Depth::MAX, move_time)
     }
 
     pub fn search_fixed_depth(
@@ -157,6 +148,8 @@ impl Searcher {
         self.board_history.push(board.hash());
 
         for &mv in moves {
+            let mut mv = mv;
+            uci_to_kxr_move(board, &mut mv);
             board.play_unchecked(mv);
             self.board_history.push(board.hash());
         }

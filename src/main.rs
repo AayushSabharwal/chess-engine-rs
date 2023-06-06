@@ -19,7 +19,6 @@ use cozy_uci::{
     UciFormatOptions, UciParseErrorKind,
 };
 use search::Searcher;
-use utils::uci_to_kxr_move;
 use UciParseErrorKind::UnknownMessageKind;
 
 use crate::{search::SearchStats, utils::kxr_to_uci_move};
@@ -143,8 +142,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
                     cur_board = Board::from(init_pos);
 
                     moves.clear();
-                    for mut mv in mvs {
-                        uci_to_kxr_move(&cur_board, &mut mv);
+                    for mv in mvs {
                         moves.push(mv);
                     }
                 }
