@@ -24,6 +24,7 @@ use UciParseErrorKind::UnknownMessageKind;
 use crate::{search::SearchStats, utils::kxr_to_uci_move};
 mod evaluate;
 mod history;
+mod lmr_table;
 mod move_ordering;
 mod psqts;
 mod search;

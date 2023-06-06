@@ -8,7 +8,7 @@ use crate::{
     move_ordering::MovesIterator,
     transposition_table::{NodeType, TTEntry, TranspositionTable},
     types::{Depth, Value},
-    utils::{NULL_MOVE, uci_to_kxr_move},
+    utils::{NULL_MOVE, uci_to_kxr_move}, lmr_table::LMRTable,
 };
 
 pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
@@ -46,6 +46,7 @@ pub struct Searcher {
     stop_search: bool,
     history: HistoryTable,
     killers: [Option<Move>; 257],
+    lmr_table: LMRTable,
     best_move: Move,
     ply: u8,
 }
@@ -60,6 +61,7 @@ impl Searcher {
             stop_search: false,
             history: HistoryTable::new(),
             killers: [None; 257],
+            lmr_table: LMRTable::new(),
             best_move: NULL_MOVE,
             ply: 0,
         }
@@ -225,7 +227,6 @@ impl Searcher {
         );
         let mut best_value = -SCORE_INF;
         let mut best_move = NULL_MOVE;
-        let mut first_move = false;
         self.push_board_hash(board_hash);
 
         if !is_pv_node && depth >= 3 {
@@ -240,16 +241,22 @@ impl Searcher {
             }
         }
 
-        for (mv, iscapture) in it {
+        for (move_num, (mv, iscapture)) in it.enumerate() {
             let mut move_board = board.clone();
             move_board.play(mv);
 
-            let cur_value = if first_move {
-                first_move = false;
+            let cur_value = if move_num == 0 {
                 -self.search_internal(&move_board, stats, depth - 1, -beta, -alpha, timer)
             } else {
+                let reduction = if iscapture || mv.promotion.is_some() || !board.checkers().is_empty() || !move_board.checkers().is_empty() {
+                    0
+                } else {
+                    self.lmr_table.get(depth, move_num)
+                };
+
+                let new_depth = depth - reduction - 1;
                 let tmp_value =
-                    -self.search_internal(&move_board, stats, depth - 1, -alpha - 1, -alpha, timer);
+                    -self.search_internal(&move_board, stats, new_depth, -alpha - 1, -alpha, timer);
                 if alpha < tmp_value && tmp_value < beta {
                     -self.search_internal(&move_board, stats, depth - 1, -beta, -alpha, timer)
                 } else {
