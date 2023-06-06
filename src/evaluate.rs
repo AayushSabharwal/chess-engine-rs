@@ -1,6 +1,9 @@
 use cozy_chess::{Board, Color, Square};
 
-use crate::{psqts::{EG_TABLE, EG_VALUE, GAME_PHASE_INC, MG_TABLE, MG_VALUE}, types::Value};
+use crate::{
+    psqts::{EG_TABLE, EG_VALUE, GAME_PHASE_INC, MG_TABLE, MG_VALUE},
+    types::Value,
+};
 
 pub const PIECE_VALUES: [Value; 6] = [100, 250, 300, 500, 900, 10000];
 

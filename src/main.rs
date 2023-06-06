@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cozy_chess::{Board, Color};
+use cozy_chess::{Board, Color, Move};
 use cozy_uci::{
     command::UciCommand,
     remark::{UciIdInfo, UciRemark},
@@ -22,13 +22,12 @@ use search::Searcher;
 use utils::uci_to_kxr_move;
 use UciParseErrorKind::UnknownMessageKind;
 
-use crate::{search_status::SearchStatus, utils::kxr_to_uci_move};
+use crate::{search::SearchStats, utils::kxr_to_uci_move};
 mod evaluate;
 mod history;
 mod move_ordering;
 mod psqts;
 mod search;
-mod search_status;
 mod transposition_table;
 mod types;
 mod utils;
@@ -37,7 +36,7 @@ mod utils;
 enum ThreadMessage {
     SearchTask {
         board: Board,
-        board_history: Vec<u64>,
+        moves: Vec<Move>,
         time_left: Duration,
         time_inc: Duration,
     },
@@ -75,17 +74,21 @@ fn main() {
 
         match task {
             ThreadMessage::SearchTask {
-                board,
-                board_history,
+                mut board,
+                moves,
                 time_left,
                 time_inc,
             } => {
-                let mut status = SearchStatus::new(board_history);
-                let (mut bm, _bv) =
-                    searcher.search_for_time(&board, &mut status, time_left / 20 + time_inc / 2);
+                let mut stats = SearchStats::default();
+                let (mut bm, _bv) = searcher.search_for_time(
+                    &mut board,
+                    &moves,
+                    &mut stats,
+                    time_left / 20 + time_inc / 2,
+                );
 
-                println!("info nodes {}", status.nodes_visited);
-
+                println!("info nodes {}", stats.nodes_visited);
+                println!("info depth {}", stats.depth);
                 kxr_to_uci_move(&board, &mut bm);
                 println!(
                     "{}",
@@ -107,7 +110,8 @@ fn main() {
 fn uci_handler(tx: Sender<ThreadMessage>) {
     let options = UciFormatOptions::default();
     let mut cur_board = Board::startpos();
-    let mut board_history = Vec::new();
+    let mut moves = Vec::new();
+    moves.reserve(512);
 
     loop {
         let mut line = String::new();
@@ -138,19 +142,10 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
                 } => {
                     cur_board = Board::from(init_pos);
 
-                    board_history.clear();
-                    board_history.push(cur_board.hash());
+                    moves.clear();
                     for mut mv in mvs {
                         uci_to_kxr_move(&cur_board, &mut mv);
-                        cur_board.play_unchecked(mv);
-                        board_history.push(cur_board.hash());
-
-                        if cur_board.halfmove_clock() == 0 {
-                            board_history.clear();
-                        }
-                    }
-                    if !board_history.is_empty() {
-                        board_history.pop();
+                        moves.push(mv);
                     }
                 }
                 UciCommand::SetOption { name: _, value: _ } => {}
@@ -163,7 +158,7 @@ fn uci_handler(tx: Sender<ThreadMessage>) {
                 UciCommand::Go(opts) => {
                     tx.send(ThreadMessage::SearchTask {
                         board: cur_board.clone(),
-                        board_history: board_history.clone(),
+                        moves: moves.clone(),
                         time_left: match cur_board.side_to_move() {
                             Color::White => opts.wtime.unwrap(),
                             Color::Black => opts.btime.unwrap(),
@@ -190,22 +185,23 @@ fn run_benchmark() {
     let mut searcher: Searcher = Searcher::new(100_000_000);
     let mut total_nodes = 0;
     let mut total_time = 0.0;
+    let moves = Vec::new();
     for (i, fen) in include_str!("fen.csv").split('\n').take(50).enumerate() {
         searcher.tt.clear();
-        let board = fen.parse::<Board>().unwrap();
+        let mut board = fen.parse::<Board>().unwrap();
         let start = Instant::now();
-        let mut status = SearchStatus::default();
-        let (bm, bv) = searcher.search_fixed_depth(&board, &mut status, 7);
+        let mut stats = SearchStats::default();
+        let (bm, bv) = searcher.search_fixed_depth(&mut board, &moves, &mut stats, 7);
         let duration = start.elapsed();
-        total_nodes += status.nodes_visited;
+        total_nodes += stats.nodes_visited;
         total_time += duration.as_secs_f64();
 
         println!(
             "Position [{i:02}]: Move {:} Value {bv:8} | {:10} Nodes in {:6.3}s at {:10.2} KNPS",
             bm,
-            status.nodes_visited,
+            stats.nodes_visited,
             duration.as_secs_f64(),
-            f64::from(status.nodes_visited) / duration.as_secs_f64() / 1e3,
+            f64::from(stats.nodes_visited) / duration.as_secs_f64() / 1e3,
         );
     }
 
@@ -219,14 +215,15 @@ fn run_benchmark() {
 
 fn hyperfine() {
     // let board = "r1br1nk1/ppq1bpp1/4p2p/8/4N2P/P3P3/1PQBBPP1/2R1K2R b K - 0 17"
-    let board = "r5rk/pp1np1bn/2pp2q1/3P1bN1/2P1N2Q/1P6/PB2PPBP/3R1RK1 w - - 0 1"
+    let mut board = "r5rk/pp1np1bn/2pp2q1/3P1bN1/2P1N2Q/1P6/PB2PPBP/3R1RK1 w - - 0 1"
         .parse::<Board>()
         .unwrap();
     // println!("{board}");
     //
     dbg!(Searcher::new(100_000_000).search_for_time(
-        &board,
-        &mut SearchStatus::default(),
+        &mut board,
+        &Vec::new(),
+        &mut SearchStats::default(),
         Duration::from_secs(10)
     ));
 }
@@ -236,10 +233,7 @@ mod test {
     use cozy_chess::{Board, GameStatus};
     use std::{fs, time::Duration};
 
-    use crate::{
-        search::{Searcher, MATE_VALUE},
-        search_status::SearchStatus,
-    };
+    use crate::search::{SearchStats, Searcher, MATE_VALUE};
 
     fn mate_in_i(mate_in: usize, fpath: &str, count: usize) {
         let ply = 2 * mate_in - 1;
@@ -247,16 +241,19 @@ mod test {
         for fen in fs::read_to_string(fpath).unwrap().split("\n").take(count) {
             let mut board = Board::from_fen(fen, false).unwrap();
             let (mut bm, bv) = searcher.search_for_time(
-                &board,
-                &mut SearchStatus::default(),
+                &mut board,
+                &Vec::new(),
+                &mut SearchStats::default(),
                 Duration::from_secs(10),
             );
             board.play(bm);
+
             assert!(bv > MATE_VALUE - 100);
             for _ in 1..ply {
                 (bm, _) = searcher.search_for_time(
-                    &board,
-                    &mut SearchStatus::default(),
+                    &mut board,
+                    &Vec::new(),
+                    &mut SearchStats::default(),
                     Duration::from_secs(10),
                 );
                 board.play(bm);
