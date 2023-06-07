@@ -15,6 +15,7 @@ use crate::{
 pub const MATE_VALUE: Value = PIECE_VALUES[Piece::King as usize];
 const SCORE_INF: Value = Value::MAX;
 const LMR_MIN_DEPTH: Depth = 3;
+const RFP_EVAL_MARGIN: Value = 75;
 
 // To end searches early
 #[derive(Debug)]
@@ -213,6 +214,7 @@ impl Searcher {
         // This allows us to save considerable work.
         let tt_res = self.tt.get(board_hash);
         let mut tt_move = NULL_MOVE;
+        let static_eval;
 
         if let Some(tte) = tt_res {
             // Don't use TT at the root, and don't use it if it wasn't searched deeper than
@@ -239,6 +241,9 @@ impl Searcher {
             }
 
             tt_move = tte.best_move;
+            static_eval = tte.best_value;
+        } else {
+            static_eval = evaluate::evaluate(board);
         }
 
         if board.status() == GameStatus::Won {
@@ -272,22 +277,36 @@ impl Searcher {
         // Push the current board hash to the stack for draw detection
         self.push_board_hash(board_hash);
 
-        // Null Move Heuristic (NMH) / Null Move Pruning (NMP)
-        // This heuristic assumes that we can always improve our position with a legal move.
-        // If we forfeit our right to move and still cause a cutoff, then there's no point searching
-        // all moves from this position since they'll be better anyway and we just want a cutoff.
-        // This is avoided for PV nodes and if the remaining search is shallow anyway. For PV nodes,
-        // we want to calculate the line we will play as far as possible to ensure it is good.
-        if !is_pv_node && depth >= 3 {
-            let null_move = board.null_move();
-            // Null move is not always guaranteed to be legal (King in check)
-            if let Some(move_board) = null_move {
-                let null_move_value =
-                    -self.search_internal(&move_board, stats, depth - 3, -beta, -beta + 1, timer);
-                if null_move_value >= beta {
-                    self.pop_board_hash();
-                    return null_move_value;
+        if !is_pv_node && self.ply > 0 {
+            // Null Move Heuristic (NMH) / Null Move Pruning (NMP)
+            // This heuristic assumes that we can always improve our position with a legal move.
+            // If we forfeit our right to move and still cause a cutoff, then there's no point searching
+            // all moves from this position since they'll be better anyway and we just want a cutoff.
+            // This is avoided for PV nodes and if the remaining search is shallow anyway. For PV nodes,
+            // we want to calculate the line we will play as far as possible to ensure it is good.
+            if depth >= 3 {
+                let null_move = board.null_move();
+                // Null move is not always guaranteed to be legal (King in check)
+                if let Some(move_board) = null_move {
+                    let null_move_value =
+                        -self.search_internal(&move_board, stats, depth - 3, -beta, -beta + 1, timer);
+                    if null_move_value >= beta {
+                        self.pop_board_hash();
+                        return null_move_value;
+                    }
                 }
+            }
+
+            // Reverse Futility Pruning (RFP)
+            // This pruning heuristic checks if the current board evaluation (either from TT or a
+            // static eval) is enough to cause a cutoff by a significant margin. The margin required
+            // scales with depth, discouraging cutoffs at higher depths. The idea is, if the eval is good
+            // enough, no decent move will lose hard enough to not cause a cutoff. Thus, we might as well
+            // assume a cutoff. Higher depth searches from the same position will fail this check, thus
+            // the position will eventually be fully searched.
+            if static_eval >= (beta + RFP_EVAL_MARGIN * Value::from(depth)) {
+                self.pop_board_hash();
+                return static_eval;
             }
         }
 
