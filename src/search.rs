@@ -304,7 +304,7 @@ impl Searcher {
             // enough, no decent move will lose hard enough to not cause a cutoff. Thus, we might as well
             // assume a cutoff. Higher depth searches from the same position will fail this check, thus
             // the position will eventually be fully searched.
-            if static_eval >= (beta + RFP_EVAL_MARGIN * Value::from(depth)) {
+            if depth <= 5 && board.checkers().is_empty() && static_eval >= (beta + RFP_EVAL_MARGIN * Value::from(depth)) {
                 self.pop_board_hash();
                 return static_eval;
             }
