@@ -12,3 +12,7 @@ cozy-uci = { git = "https://github.com/analog-hors/cozy-uci", version = "0.1.0" 
 
 [profile.release]
 lto = true
+
+[profile.test]
+opt-level = 3
+lto = true

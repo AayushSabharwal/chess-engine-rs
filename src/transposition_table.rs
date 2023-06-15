@@ -1,60 +1,54 @@
+use std::mem::size_of;
+
 use cozy_chess::Move;
 
-use crate::utils::NULL_MOVE;
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum TTNodeType {
+#[derive(Debug, Copy, Clone)]
+pub enum NodeType {
     Exact,
     UpperBound,
     LowerBound,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub struct TTEntry {
     pub hash: u64,
     pub best_move: Move,
-    pub best_value: i32,
-    pub depth: usize,
-    pub node_type: TTNodeType,
+    pub best_value: i16,
+    pub depth: u8,
+    pub node_type: NodeType,
 }
-
-const NULL_TTE: TTEntry = TTEntry {
-    hash: 0,
-    best_move: NULL_MOVE,
-    best_value: -640000,
-    depth: 0,
-    node_type: TTNodeType::Exact,
-};
 
 #[derive(Debug)]
 pub struct TranspositionTable {
-    table: Vec<Option<TTEntry>>,
-    size: usize
+    buffer: Vec<Option<TTEntry>>,
 }
 
 impl TranspositionTable {
-    pub fn new(size: usize) -> Self {
+    pub fn new(bytes: usize) -> Self {
         Self {
-            table: vec![None; size],
-            size,
+            buffer: vec![None; bytes_to_entries(bytes)],
         }
     }
 
-    pub fn get_entry(&self, h: u64) -> Option<TTEntry> {
-        let val = self.table[h as usize % self.size];
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn get(&self, hash: u64) -> Option<TTEntry> {
+        let idx = hash as usize % self.buffer.len();
+        self.buffer[idx].filter(|&tte| tte.hash == hash)
+    }
 
-        if let Some(tte) = val {
-            if tte.hash != h {
-                return None
-            }
-            val
-        } else {
-            val
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn set(&mut self, hash: u64, value: TTEntry) {
+        let idx = hash as usize % self.buffer.len();
+        self.buffer[idx] = Some(value);
+    }
+
+    pub fn clear(&mut self) {
+        for i in 0..self.buffer.len() {
+            self.buffer[i] = None;
         }
     }
+}
 
-    #[inline]
-    pub fn set_entry(&mut self, h: u64, e: TTEntry) {
-        self.table[h as usize % self.size] = Some(e);
-    }
+const fn bytes_to_entries(bytes: usize) -> usize {
+    bytes / size_of::<Option<TTEntry>>()
 }
